@@ -209,6 +209,58 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
     }
   };
 
+  // Touch Handlers for Mobile / Tablet Support
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 1) {
+      const touch = e.touches[0];
+      const mouseEvt = {
+        clientX: touch.clientX,
+        clientY: touch.clientY,
+        button: 0,
+        shiftKey: e.shiftKey,
+        target: e.target,
+        stopPropagation: () => e.stopPropagation(),
+        preventDefault: () => e.preventDefault(),
+      } as unknown as React.MouseEvent;
+      handleCanvasMouseDown(mouseEvt);
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 1) {
+      const touch = e.touches[0];
+      const mouseEvt = {
+        clientX: touch.clientX,
+        clientY: touch.clientY,
+        shiftKey: e.shiftKey,
+        target: e.target,
+        stopPropagation: () => e.stopPropagation(),
+        preventDefault: () => e.preventDefault(),
+      } as unknown as React.MouseEvent;
+      handleCanvasMouseMove(mouseEvt);
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    handleCanvasMouseUp();
+  };
+
+  const handleNodeTouchStart = (e: React.TouchEvent, node: CanvasNode) => {
+    if (e.touches.length === 1) {
+      const touch = e.touches[0];
+      const mouseEvt = {
+        clientX: touch.clientX,
+        clientY: touch.clientY,
+        button: 0,
+        shiftKey: e.shiftKey,
+        target: e.target,
+        stopPropagation: () => e.stopPropagation(),
+        preventDefault: () => e.preventDefault(),
+      } as unknown as React.MouseEvent;
+      handleNodeMouseDown(mouseEvt, node);
+    }
+  };
+
   // Canvas Mouse Down
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
     const canvasPt = screenToCanvasCoords(e.clientX, e.clientY);
@@ -512,6 +564,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
     onUpdateProject({ nodes: [...project.nodes, newNode] });
     setSelectedNodeIds([id]);
     setShowShapePicker(false);
+    setActiveTool('select');
   };
 
   // Helper title mapping
@@ -649,6 +702,9 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       onMouseDown={handleCanvasMouseDown}
       onMouseMove={handleCanvasMouseMove}
       onMouseUp={handleCanvasMouseUp}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
       className={`absolute inset-0 canvas-bg z-0 overflow-hidden select-none pt-16 ${
         activeTool === 'pan' || isSpacePressed
           ? 'cursor-grab active:cursor-grabbing'
@@ -924,6 +980,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
             <div
               key={node.id}
               onMouseDown={(e) => handleNodeMouseDown(e, node)}
+              onTouchStart={(e) => handleNodeTouchStart(e, node)}
               style={{
                 left: `${node.x}px`,
                 top: `${node.y}px`,

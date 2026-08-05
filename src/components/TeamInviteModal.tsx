@@ -57,6 +57,9 @@ export const TeamInviteModal: React.FC<TeamInviteModalProps> = ({
 
   if (!isOpen) return null;
 
+  const [sendingInvite, setSendingInvite] = useState(false);
+  const [inviteNoticeMessage, setInviteNoticeMessage] = useState('');
+
   const handleSaveTeamName = (e: React.FormEvent) => {
     e.preventDefault();
     if (teamName.trim()) {
@@ -65,23 +68,45 @@ export const TeamInviteModal: React.FC<TeamInviteModalProps> = ({
     }
   };
 
-  const handleSendInvite = (e: React.FormEvent) => {
+  const handleSendInvite = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!emailInput.trim()) return;
 
-    const newMember = {
-      id: 'm-' + Date.now(),
-      name: emailInput.split('@')[0],
-      email: emailInput.trim(),
-      role: role,
-      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${emailInput.trim()}`,
-      status: 'Invited (Pending)',
-    };
+    const emailToInvite = emailInput.trim();
+    setSendingInvite(true);
 
-    setMembers((prev) => [...prev, newMember]);
-    setEmailInput('');
-    setSentEmailNotice(true);
-    setTimeout(() => setSentEmailNotice(false), 4000);
+    try {
+      const res = await fetch('/api/team/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: emailToInvite,
+          role,
+          teamName,
+          redirectUrl: directJoinUrl,
+        }),
+      });
+      const data = await res.json();
+
+      const newMember = {
+        id: 'm-' + Date.now(),
+        name: emailToInvite.split('@')[0],
+        email: emailToInvite,
+        role: role,
+        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${emailToInvite}`,
+        status: 'Invited (Pending)',
+      };
+
+      setMembers((prev) => [...prev, newMember]);
+      setEmailInput('');
+      setSentEmailNotice(true);
+      setInviteNoticeMessage(data.message || `Invitation email sent directly to ${emailToInvite} via Supabase!`);
+      setTimeout(() => setSentEmailNotice(false), 5000);
+    } catch (err) {
+      console.error('Invite error:', err);
+    } finally {
+      setSendingInvite(false);
+    }
   };
 
   const handleCopyLink = () => {
@@ -148,10 +173,16 @@ export const TeamInviteModal: React.FC<TeamInviteModalProps> = ({
         <div className="p-6 overflow-y-auto space-y-6 flex-1 text-xs">
           {/* Invite Form */}
           <div className="bg-[#f8fafc] border border-[#e2e8f0] p-4 rounded-2xl space-y-3">
-            <h3 className="font-bold text-[#191c1e] text-xs flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-[#004ac6] text-base">mail</span>
-              Invite Team Member via Email
-            </h3>
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-[#191c1e] text-xs flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[#004ac6] text-base">mail</span>
+                Invite Team Member via Supabase Email
+              </h3>
+              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                Direct Supabase Mail
+              </span>
+            </div>
 
             <form onSubmit={handleSendInvite} className="flex gap-2">
               <input
@@ -172,10 +203,13 @@ export const TeamInviteModal: React.FC<TeamInviteModalProps> = ({
               </select>
               <button
                 type="submit"
-                className="bg-[#004ac6] hover:bg-[#2563eb] text-white font-bold px-4 py-2.5 rounded-xl text-xs transition-colors flex items-center gap-1 shadow-xs"
+                disabled={sendingInvite}
+                className="bg-[#004ac6] hover:bg-[#2563eb] text-white font-bold px-4 py-2.5 rounded-xl text-xs transition-colors flex items-center gap-1 shadow-xs disabled:opacity-50"
               >
-                <span className="material-symbols-outlined text-base">send</span>
-                Send Email Invite
+                <span className="material-symbols-outlined text-base">
+                  {sendingInvite ? 'sync' : 'send'}
+                </span>
+                {sendingInvite ? 'Sending...' : 'Send Email'}
               </button>
             </form>
 
@@ -184,68 +218,25 @@ export const TeamInviteModal: React.FC<TeamInviteModalProps> = ({
                 <span className="material-symbols-outlined text-base text-emerald-600">
                   mark_email_read
                 </span>
-                Invitation email sent! Receivers can click the "Join Team" button in email to join live.
+                {inviteNoticeMessage}
               </div>
             )}
-          </div>
 
-          {/* Email Invitation Received Simulation Card (Direct Join Button) */}
-          <div className="bg-gradient-to-br from-[#f1f5f9] to-[#e2e8f0] border border-[#cbd5e1] rounded-2xl p-4 space-y-3 shadow-inner">
-            <div className="flex items-center justify-between border-b border-[#cbd5e1] pb-2">
-              <span className="font-bold text-[#0f172a] text-xs flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-[#004ac6] text-base">
-                  forward_to_inbox
-                </span>
-                Received Email Preview (Recipient View)
-              </span>
-              <span className="text-[10px] font-mono text-[#64748b]">Email ID Invite Link</span>
-            </div>
-
-            <div className="bg-white p-4 rounded-xl border border-[#cbd5e1] space-y-3">
-              <div className="text-[11px] text-[#475569] space-y-1">
-                <div>
-                  <strong className="text-[#0f172a]">Subject:</strong> Invitation to join "{teamName}" on FlowBoard
-                </div>
-                <div>
-                  <strong className="text-[#0f172a]">From:</strong> FlowBoard Online Collaboration &lt;invites@flowboard.app&gt;
-                </div>
+            {/* Direct Join Link Bar */}
+            <div className="pt-2 border-t border-[#e2e8f0] flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-[#64748b] text-[11px] truncate max-w-[340px]">
+                <span className="material-symbols-outlined text-sm text-[#004ac6]">link</span>
+                <span className="truncate">{directJoinUrl}</span>
               </div>
-
-              <div className="p-3 bg-[#f8fafc] rounded-lg border border-[#e2e8f0] text-xs text-[#334155] leading-relaxed">
-                You've been invited by <strong>{currentUser?.displayName || 'a team administrator'}</strong> to join <strong>{teamName}</strong>. You can view, edit, and collaborate online in real-time on whiteboard canvas projects.
-              </div>
-
-              {/* Direct Join Button inside Email */}
-              <div className="pt-1 flex flex-col items-center gap-2">
-                <a
-                  href={directJoinUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="bg-[#004ac6] hover:bg-[#2563eb] text-white text-xs font-bold px-6 py-2.5 rounded-full transition-transform hover:scale-105 shadow-md flex items-center gap-2 no-underline"
-                >
-                  <span className="material-symbols-outlined text-base">groups</span>
-                  JOIN TEAM & COLLABORATE NOW
-                </a>
-                <span className="text-[10px] text-[#64748b]">
-                  Clicking opens your app directly with active team membership
-                </span>
-              </div>
-            </div>
-
-            {/* Copy Link Option */}
-            <div className="flex items-center justify-between pt-1">
-              <span className="text-[11px] text-[#475569] truncate max-w-[320px] font-mono bg-white/70 px-2 py-1 rounded-md border border-[#cbd5e1]">
-                {directJoinUrl}
-              </span>
               <button
                 type="button"
                 onClick={handleCopyLink}
-                className="bg-white hover:bg-[#f1f5f9] border border-[#cbd5e1] text-[#0f172a] px-3.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1 transition-colors shadow-xs"
+                className="bg-white hover:bg-[#f1f5f9] border border-[#cbd5e1] text-[#0f172a] px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1 transition-colors shadow-xs shrink-0"
               >
                 <span className="material-symbols-outlined text-sm text-[#004ac6]">
                   {copiedLink ? 'check' : 'content_copy'}
                 </span>
-                {copiedLink ? 'Link Copied!' : 'Copy Email Link'}
+                {copiedLink ? 'Copied!' : 'Copy Link'}
               </button>
             </div>
           </div>

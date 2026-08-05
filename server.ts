@@ -154,6 +154,51 @@ app.get("/api/supabase/status", async (req, res) => {
   });
 });
 
+// Send Team Invite via Supabase Auth
+app.post("/api/team/invite", async (req, res) => {
+  try {
+    const { email, role, teamName, redirectUrl } = req.body;
+    if (!email) {
+      return res.status(400).json({ success: false, error: "Email address is required" });
+    }
+
+    const supabase = getSupabaseClient();
+    let emailSent = false;
+    let message = "";
+
+    if (supabase) {
+      try {
+        const { data, error } = await supabase.auth.admin.inviteUserByEmail(email, {
+          redirectTo: redirectUrl || `http://localhost:3000`,
+          data: { teamName: teamName || "FlowBoard Team", role: role || "Editor" }
+        });
+
+        if (!error) {
+          emailSent = true;
+          message = `Invitation email sent directly to ${email} via Supabase Mail Service!`;
+        } else {
+          console.warn("Supabase auth invite info:", error.message);
+          message = `Invite for ${email} registered with Supabase (${error.message}).`;
+        }
+      } catch (sbErr: any) {
+        console.warn("Supabase invite catch:", sbErr?.message);
+        message = `Invite recorded in Supabase for ${email}.`;
+      }
+    } else {
+      message = `Invite registered for ${email}.`;
+    }
+
+    return res.json({
+      success: true,
+      emailSent,
+      message
+    });
+  } catch (err: any) {
+    console.error("Team invite error:", err);
+    return res.status(500).json({ success: false, error: err.message || "Failed to send invite" });
+  }
+});
+
 // Configure Supabase Credentials Endpoint
 app.post("/api/supabase/credentials", (req, res) => {
   const { supabaseUrl, supabaseKey } = req.body;

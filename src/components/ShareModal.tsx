@@ -28,16 +28,38 @@ export const ShareModal: React.FC<ShareModalProps> = ({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleInvite = (e: React.FormEvent) => {
+  const [inviteNotice, setInviteNotice] = useState<string | null>(null);
+
+  const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!emailInput.trim()) return;
+    const targetEmail = emailInput.trim();
+
+    try {
+      const res = await fetch('/api/team/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: targetEmail,
+          role: role === 'editor' ? 'Editor' : 'Viewer',
+          teamName: projectTitle,
+          redirectUrl: window.location.href,
+        }),
+      });
+      const data = await res.json();
+      setInviteNotice(data.message || `Invitation sent to ${targetEmail} via Supabase Mail`);
+      setTimeout(() => setInviteNotice(null), 4000);
+    } catch (err) {
+      console.error(err);
+    }
+
     setCollaborators([
       ...collaborators,
       {
-        name: emailInput.split('@')[0],
-        email: emailInput,
+        name: targetEmail.split('@')[0],
+        email: targetEmail,
         role: role === 'editor' ? 'Editor' : 'Viewer',
-        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${emailInput}`,
+        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${targetEmail}`,
       },
     ]);
     setEmailInput('');
@@ -89,6 +111,15 @@ export const ShareModal: React.FC<ShareModalProps> = ({
               Invite
             </button>
           </form>
+
+          {inviteNotice && (
+            <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+              <span className="material-symbols-outlined text-base text-emerald-600">
+                mark_email_read
+              </span>
+              {inviteNotice}
+            </div>
+          )}
 
           {/* Collaborator List */}
           <div className="flex flex-col gap-3 max-h-48 overflow-y-auto pr-1">

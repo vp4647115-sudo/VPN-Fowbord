@@ -18,6 +18,9 @@ interface NavbarProps {
   setSearchQuery: (query: string) => void;
   onNewProject: () => void;
   onRenameProject: (newTitle: string) => void;
+  activeCategory?: string;
+  setActiveCategory?: (cat: any) => void;
+  onOpenSettings?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -35,11 +38,15 @@ export const Navbar: React.FC<NavbarProps> = ({
   setSearchQuery,
   onNewProject,
   onRenameProject,
+  activeCategory,
+  setActiveCategory,
+  onOpenSettings,
 }) => {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleInput, setTitleInput] = useState('');
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
 
   const handleTitleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,10 +59,22 @@ export const Navbar: React.FC<NavbarProps> = ({
   return (
     <header className="fixed top-0 left-0 w-full z-50 flex justify-between items-center px-6 py-3 h-16 bg-[#ffffff]/90 backdrop-blur-xl border-b border-[#c3c6d7]/40 shadow-sm transition-all">
       {/* Left Branding & Title */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
+        {viewMode === 'dashboard' && setActiveCategory && (
+          <button
+            onClick={() => setShowMobileMenu(!showMobileMenu)}
+            className="md:hidden p-2 rounded-xl text-[#434655] hover:bg-[#e0e3e5]/60 transition-colors"
+            title="Toggle Menu"
+          >
+            <span className="material-symbols-outlined text-xl">
+              {showMobileMenu ? 'close' : 'menu'}
+            </span>
+          </button>
+        )}
+
         <button
           onClick={onOpenDashboard}
-          className="text-lg font-headline font-bold text-[#004ac6] hover:opacity-90 transition-opacity flex items-center gap-2"
+          className="text-base md:text-lg font-headline font-bold text-[#004ac6] hover:opacity-90 transition-opacity flex items-center gap-2"
         >
           <span>FlowBoard AI</span>
         </button>
@@ -328,6 +347,58 @@ export const Navbar: React.FC<NavbarProps> = ({
           </>
         )}
       </div>
+
+      {/* Mobile Menu Drawer */}
+      {showMobileMenu && setActiveCategory && (
+        <div className="absolute top-16 left-0 w-full bg-white border-b border-[#c3c6d7] shadow-xl p-4 z-50 md:hidden flex flex-col gap-2 animate-in slide-in-from-top-2">
+          <div className="mb-2">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search projects..."
+              className="w-full bg-[#f2f4f6] border border-[#c3c6d7]/50 rounded-xl py-2 px-3 text-xs text-[#191c1e] focus:ring-2 focus:ring-[#004ac6] focus:bg-white transition-all outline-none"
+            />
+          </div>
+          {[
+            { id: 'My Projects', label: 'My Projects', icon: 'dashboard' },
+            { id: 'Shared with me', label: 'Shared with me', icon: 'group' },
+            { id: 'Templates', label: 'Templates', icon: 'dashboard_customize' },
+            { id: 'Trash', label: 'Trash', icon: 'delete' },
+          ].map((item) => {
+            const isActive = activeCategory === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => {
+                  setActiveCategory(item.id as any);
+                  setShowMobileMenu(false);
+                }}
+                className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-semibold text-left transition-colors ${
+                  isActive
+                    ? 'bg-[#2563eb]/10 text-[#004ac6] font-bold'
+                    : 'text-[#434655] hover:bg-[#f2f4f6]'
+                }`}
+              >
+                <span className="material-symbols-outlined text-lg">{item.icon}</span>
+                {item.label}
+              </button>
+            );
+          })}
+          {onOpenSettings && (
+            <button
+              onClick={() => {
+                onOpenSettings();
+                setShowMobileMenu(false);
+              }}
+              className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-semibold text-[#434655] hover:bg-[#f2f4f6] text-left transition-colors"
+            >
+              <span className="material-symbols-outlined text-lg">settings</span>
+              Settings
+            </button>
+          )}
+        </div>
+      )}
     </header>
   );
 };

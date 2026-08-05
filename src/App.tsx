@@ -151,20 +151,106 @@ export default function App() {
     }
   };
 
-  // Delete project
+  // Move project to Trash
   const handleDeleteProject = async (id: string) => {
     try {
-      await fetch(`/api/projects/${id}`, { method: 'DELETE' });
-      setProjects((prev) => prev.filter((p) => p.id !== id));
+      const targetProj = projects.find((p) => p.id === id);
+      if (!targetProj) return;
+
+      const updated = { ...targetProj, category: 'Trash' as const };
+      await fetch(`/api/projects/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated),
+      });
+
+      setProjects((prev) => prev.map((p) => (p.id === id ? updated : p)));
       if (currentProject?.id === id) {
         setCurrentProject(null);
         setViewMode('dashboard');
       }
       if (currentUser) {
+        syncProjectToFirebase(updated, currentUser.uid);
+      }
+    } catch (err) {
+      console.error('Failed to move project to trash:', err);
+    }
+  };
+
+  // Permanently delete project
+  const handlePermanentDeleteProject = async (id: string) => {
+    try {
+      await fetch(`/api/projects/${id}`, { method: 'DELETE' });
+      setProjects((prev) => prev.filter((p) => p.id !== id));
+      if (currentUser) {
         deleteProjectFromFirebase(id);
       }
     } catch (err) {
-      console.error('Failed to delete project:', err);
+      console.error('Failed to delete project permanently:', err);
+    }
+  };
+
+  // Restore project from trash
+  const handleRestoreProject = async (id: string) => {
+    try {
+      const targetProj = projects.find((p) => p.id === id);
+      if (!targetProj) return;
+
+      const restored = { ...targetProj, category: 'My Projects' as const };
+      await fetch(`/api/projects/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(restored),
+      });
+
+      setProjects((prev) => prev.map((p) => (p.id === id ? restored : p)));
+      if (currentUser) {
+        syncProjectToFirebase(restored, currentUser.uid);
+      }
+    } catch (err) {
+      console.error('Failed to restore project from trash:', err);
+    }
+  };
+
+  // Empty entire Trash
+  const handleEmptyTrash = async () => {
+    try {
+      const trashedIds = projects.filter((p) => p.category === 'Trash').map((p) => p.id);
+      for (const id of trashedIds) {
+        await fetch(`/api/projects/${id}`, { method: 'DELETE' });
+        if (currentUser) deleteProjectFromFirebase(id);
+      }
+      setProjects((prev) => prev.filter((p) => p.category !== 'Trash'));
+    } catch (err) {
+      console.error('Failed to empty trash:', err);
+    }
+  };
+
+  // Use Template to create new canvas workspace
+  const handleUseTemplate = async (template: any) => {
+    try {
+      const res = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: template.title,
+          description: template.description,
+          userId: currentUser?.uid || 'guest',
+          nodes: template.nodes,
+          connectors: template.connectors,
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.project) {
+        setProjects((prev) => [data.project, ...prev]);
+        setCurrentProject(data.project);
+        setViewMode('workspace');
+        if (currentUser) {
+          syncProjectToFirebase(data.project, currentUser.uid);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to create project from template:', err);
     }
   };
 
@@ -298,6 +384,9 @@ export default function App() {
         setSearchQuery={setSearchQuery}
         onNewProject={handleNewProject}
         onRenameProject={handleRenameProject}
+        activeCategory={activeCategory}
+        setActiveCategory={setActiveCategory}
+        onOpenSettings={() => setIsSettingsModalOpen(true)}
       />
 
       {/* Joined Team Notice Banner */}
@@ -330,8 +419,13 @@ export default function App() {
               onSelectProject={handleSelectProject}
               onNewProject={handleNewProject}
               onOpenAiModal={() => setIsAiModalOpen(true)}
+              onOpenTeamModal={() => setIsTeamModalOpen(true)}
               onDeleteProject={handleDeleteProject}
+              onPermanentDeleteProject={handlePermanentDeleteProject}
+              onRestoreProject={handleRestoreProject}
+              onEmptyTrash={handleEmptyTrash}
               onDuplicateProject={handleDuplicateProject}
+              onUseTemplate={handleUseTemplate}
             />
           </>
         ) : (
