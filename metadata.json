@@ -1,0 +1,6 @@
+{
+  "name": "FlowBoard AI",
+  "description": "AI-powered collaborative digital whiteboard and SaaS architecture diagramming workspace.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,45 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User account profile document",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["uid", "email"]
+    },
+    "Project": {
+      "title": "Project Diagram",
+      "description": "Diagram project with nodes, connectors, and chat",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "category": { "type": "string" },
+        "userId": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "nodes": { "type": "array" },
+        "connectors": { "type": "array" },
+        "comments": { "type": "array" },
+        "chat": { "type": "array" }
+      },
+      "required": ["id", "title", "userId"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profile document"
+    },
+    "/projects/{projectId}": {
+      "schema": { "$ref": "#/entities/Project" },
+      "description": "Flowboard diagram project document"
+    }
+  }
+}
