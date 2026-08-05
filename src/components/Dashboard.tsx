@@ -8,7 +8,6 @@ interface DashboardProps {
   searchQuery: string;
   onSelectProject: (p: Project) => void;
   onNewProject: () => void;
-  onOpenAiModal: () => void;
   onOpenTeamModal?: () => void;
   onDeleteProject: (id: string) => void;
   onPermanentDeleteProject?: (id: string) => void;
@@ -24,7 +23,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
   searchQuery,
   onSelectProject,
   onNewProject,
-  onOpenAiModal,
   onOpenTeamModal,
   onDeleteProject,
   onPermanentDeleteProject,
@@ -134,16 +132,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
               </button>
             ) : (
               <button
-                onClick={onOpenAiModal}
-                className="px-3.5 py-2 bg-[#ffdbcd] hover:bg-[#ffb596] text-[#943700] rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+                onClick={onNewProject}
+                className="px-4 py-2 bg-[#2563eb] hover:bg-[#004ac6] text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
               >
-                <span
-                  className="material-symbols-outlined text-base"
-                  style={{ fontVariationSettings: "'FILL' 1" }}
-                >
-                  auto_awesome
-                </span>
-                AI Diagram Generator
+                <span className="material-symbols-outlined text-base">add</span>
+                New Board
               </button>
             )}
           </div>

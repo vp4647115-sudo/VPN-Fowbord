@@ -5,7 +5,6 @@ import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './components/Dashboard';
 import { CanvasWorkspace } from './components/CanvasWorkspace';
 import { TeamChatSidebar } from './components/TeamChatSidebar';
-import { AiDiagramModal } from './components/AiDiagramModal';
 import { ShareModal } from './components/ShareModal';
 import { SettingsModal } from './components/SettingsModal';
 import { TeamInviteModal } from './components/TeamInviteModal';
@@ -31,7 +30,6 @@ export default function App() {
   const [activeTeamName, setActiveTeamName] = useState('Engineering Flow Team');
   const [joinedTeamNotice, setJoinedTeamNotice] = useState<string | null>(null);
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
-  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isDriveModalOpen, setIsDriveModalOpen] = useState(false);
@@ -75,28 +73,34 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Fetch initial projects from server
+  // Fetch initial projects from server with retry logic for startup
   useEffect(() => {
-    fetch('/api/projects')
-      .then(async (res) => {
-        if (!res.ok) {
-          throw new Error(`Server status ${res.status}`);
+    let attempts = 0;
+    const loadProjects = async () => {
+      while (attempts < 3) {
+        try {
+          attempts++;
+          const res = await fetch('/api/projects');
+          if (res.ok) {
+            const contentType = res.headers.get('content-type');
+            if (contentType && contentType.includes('application/json')) {
+              const data = await res.json();
+              if (data && data.success && Array.isArray(data.projects) && data.projects.length > 0) {
+                setProjects(data.projects);
+                setCurrentProject((prev) => prev || data.projects[0]);
+                return;
+              }
+            }
+          }
+        } catch (err: any) {
+          console.warn(`Attempt ${attempts} fetching /api/projects:`, err?.message || err);
         }
-        const contentType = res.headers.get('content-type');
-        if (!contentType || !contentType.includes('application/json')) {
-          throw new Error('Response is not JSON');
-        }
-        return res.json();
-      })
-      .then((data) => {
-        if (data && data.success && Array.isArray(data.projects) && data.projects.length > 0) {
-          setProjects(data.projects);
-          setCurrentProject(data.projects[0]);
-        }
-      })
-      .catch((err) => {
-        console.warn('Backend API endpoint not available or returned non-JSON, using local/Firebase state:', err.message);
-      });
+        // Wait 800ms before retrying
+        await new Promise((resolve) => setTimeout(resolve, 800));
+      }
+    };
+
+    loadProjects();
   }, []);
 
   // Handle select project
@@ -329,39 +333,6 @@ export default function App() {
     }
   };
 
-  // Handle AI Generated Diagram output
-  const handleDiagramGenerated = async (diagram: {
-    title: string;
-    description?: string;
-    nodes: any[];
-    connectors: any[];
-  }) => {
-    try {
-      const res = await fetch('/api/projects', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: diagram.title,
-          description: diagram.description || 'AI Generated Diagram',
-          userId: currentUser?.uid || 'guest',
-          nodes: diagram.nodes,
-          connectors: diagram.connectors,
-        }),
-      });
-      const data = await res.json();
-      if (data.success && data.project) {
-        setProjects((prev) => [data.project, ...prev]);
-        setCurrentProject(data.project);
-        setViewMode('workspace');
-        if (currentUser) {
-          syncProjectToFirebase(data.project, currentUser.uid);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to create AI generated project:', err);
-    }
-  };
-
   // Handle chat messages in workspace
   const handleSendMessage = (text: string) => {
     if (!currentProject) return;
@@ -375,38 +346,6 @@ export default function App() {
       text,
     };
     handleUpdateProject({ chat: [...currentProject.chat, newMsg] });
-  };
-
-  // Ask AI in workspace team chat
-  const handleAskAi = async (promptText: string) => {
-    if (!currentProject) return;
-    try {
-      const res = await fetch('/api/ai/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: promptText,
-          history: currentProject.chat,
-          currentProject,
-        }),
-      });
-      const data = await res.json();
-      if (data.success && data.reply) {
-        const aiMsg: ChatMessage = {
-          id: 'ai-' + Date.now(),
-          author: 'FlowBoard AI',
-          time: new Date().toLocaleTimeString([], {
-            hour: '2-digit',
-            minute: '2-digit',
-          }),
-          text: data.reply,
-          isAi: true,
-        };
-        handleUpdateProject({ chat: [...currentProject.chat, aiMsg] });
-      }
-    } catch (err) {
-      console.error('Failed to get AI chat reply:', err);
-    }
   };
 
   // Rename project title directly from Navbar
@@ -425,7 +364,6 @@ export default function App() {
         onLogin={() => loginWithGoogle()}
         onLogout={() => logoutUser()}
         onOpenDashboard={() => setViewMode('dashboard')}
-        onOpenAiModal={() => setIsAiModalOpen(true)}
         onOpenShareModal={() => setIsShareModalOpen(true)}
         onOpenTeamModal={() => setIsTeamModalOpen(true)}
         onOpenDriveModal={() => setIsDriveModalOpen(true)}
@@ -469,7 +407,6 @@ export default function App() {
               searchQuery={searchQuery}
               onSelectProject={handleSelectProject}
               onNewProject={handleNewProject}
-              onOpenAiModal={() => setIsAiModalOpen(true)}
               onOpenTeamModal={() => setIsTeamModalOpen(true)}
               onDeleteProject={handleDeleteProject}
               onPermanentDeleteProject={handlePermanentDeleteProject}
@@ -485,13 +422,11 @@ export default function App() {
               <CanvasWorkspace
                 project={currentProject}
                 onUpdateProject={handleUpdateProject}
-                onOpenAiModal={() => setIsAiModalOpen(true)}
                 gridStyle={gridStyle}
               />
               <TeamChatSidebar
                 chatMessages={currentProject.chat || []}
                 onSendMessage={handleSendMessage}
-                onAskAi={handleAskAi}
                 isOpen={isChatOpen}
                 onToggleOpen={() => setIsChatOpen(!isChatOpen)}
               />
@@ -501,12 +436,6 @@ export default function App() {
       </div>
 
       {/* Modals */}
-      <AiDiagramModal
-        isOpen={isAiModalOpen}
-        onClose={() => setIsAiModalOpen(false)}
-        onDiagramGenerated={handleDiagramGenerated}
-      />
-
       <ShareModal
         isOpen={isShareModalOpen}
         onClose={() => setIsShareModalOpen(false)}

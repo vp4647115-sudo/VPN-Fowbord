@@ -817,6 +817,13 @@ Keep responses helpful, concise, and formatted cleanly.`;
   }
 });
 
+// Explicit API 404 Fallback Handler (Guarantees JSON response for any /api route)
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api')) {
+    return res.status(404).json({ success: false, error: `API route ${req.method} ${req.path} not found` });
+  }
+  next();
+});
 
 // Start Vite / Static serving
 async function startServer() {

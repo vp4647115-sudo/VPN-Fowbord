@@ -10,7 +10,6 @@ interface NavbarProps {
   onLogin: () => void;
   onLogout: () => void;
   onOpenDashboard: () => void;
-  onOpenAiModal: () => void;
   onOpenShareModal: () => void;
   onOpenTeamModal?: () => void;
   onOpenDriveModal?: () => void;
@@ -32,7 +31,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   onLogin,
   onLogout,
   onOpenDashboard,
-  onOpenAiModal,
   onOpenShareModal,
   onOpenTeamModal,
   onOpenDriveModal,
@@ -149,14 +147,6 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <span className="material-symbols-outlined text-sm">add</span>
               New Project
-            </button>
-            <button
-              onClick={onOpenAiModal}
-              title="AI Diagram Generator"
-              className="bg-[#ffdbcd] text-[#943700] hover:bg-[#ffb596] px-3 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 transition-colors"
-            >
-              <span className="material-symbols-outlined text-sm">auto_awesome</span>
-              AI Generator
             </button>
 
             {/* Auth Login / Account Menu */}

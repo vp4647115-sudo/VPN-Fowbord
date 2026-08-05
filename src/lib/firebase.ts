@@ -1,6 +1,6 @@
 import { initializeApp, getApps } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, User } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer, setDoc, getDoc, collection, getDocs, query, where, deleteDoc } from 'firebase/firestore';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInAnonymously, signOut, User } from 'firebase/auth';
+import { initializeFirestore, doc, setDoc, getDoc, collection, getDocs, query, where, deleteDoc } from 'firebase/firestore';
 
 import firebaseConfigJson from '../../firebase-applet-config.json';
 
@@ -17,8 +17,15 @@ const firebaseConfig = {
 // Initialize Firebase App
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
 
-// Initialize Firestore with specific database ID from environment or config
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId || undefined);
+// Initialize Firestore with long-polling setting to avoid WebChannel stream 10s timeout errors in cloud container / iframe sandbox
+const dbId = firebaseConfig.firestoreDatabaseId;
+export const db = initializeFirestore(
+  app,
+  {
+    experimentalForceLongPolling: true,
+  },
+  dbId || '(default)'
+);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
@@ -63,10 +70,10 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 // Connection test helper
 export async function testConnection() {
   try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
+    await getDoc(doc(db, 'test', 'connection'));
   } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn('Firebase client offline status:', error);
+    if (error instanceof Error && (error.message.includes('offline') || error.message.includes('backend'))) {
+      console.warn('Firestore operating in local/offline fallback mode:', error.message);
     }
   }
 }
@@ -90,19 +97,24 @@ export async function loginWithGoogle() {
     }
     return user;
   } catch (err: any) {
-    console.warn('Google Sign-In Notice:', err?.code || err?.message || err);
-    if (err?.code === 'auth/unauthorized-domain') {
-      alert(
-        'Google Sign-In Notice:\n\n' +
-        'The current domain (' + window.location.hostname + ') is not yet added to Authorized Domains in your Firebase console.\n\n' +
-        'To enable Google Auth for this custom domain, add ' + window.location.hostname + ' under:\n' +
-        'Firebase Console -> Authentication -> Settings -> Authorized Domains.\n\n' +
-        'You can continue using FlowBoard AI as a guest!'
-      );
-    } else if (err?.code === 'auth/popup-blocked') {
-      alert('Popup was blocked by your browser. Please allow popups for this site to sign in with Google.');
+    console.warn('Google Sign-In Popup unavailable, falling back to Guest session:', err?.code || err?.message || err);
+    try {
+      const anonResult = await signInAnonymously(auth);
+      const anonUser = anonResult.user;
+      if (anonUser) {
+        await setDoc(doc(db, 'users', anonUser.uid), {
+          uid: anonUser.uid,
+          displayName: 'Guest Flow User',
+          email: 'guest@flowboard.app',
+          photoURL: '',
+          updatedAt: new Date().toISOString(),
+        }, { merge: true });
+      }
+      return anonUser;
+    } catch (fallbackErr) {
+      console.error('Sign-in fallback failed:', fallbackErr);
+      throw fallbackErr;
     }
-    throw err;
   }
 }
 

@@ -5,7 +5,6 @@ import { exportProjectToPng, exportProjectToSvg, exportProjectToJson } from '../
 interface CanvasWorkspaceProps {
   project: Project;
   onUpdateProject: (updated: Partial<Project>) => void;
-  onOpenAiModal: () => void;
   gridStyle?: 'dot' | 'line' | 'blank';
 }
 
@@ -38,7 +37,6 @@ const STROKE_COLORS = [
 export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   project,
   onUpdateProject,
-  onOpenAiModal,
   gridStyle = 'dot',
 }) => {
   // Tool & Navigation state
@@ -53,33 +51,66 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
 
   // Moveable Toolbar State
   const [toolbarPos, setToolbarPos] = useState<{ x: number; y: number } | null>(null);
+  const [isDraggingToolbar, setIsDraggingToolbar] = useState(false);
+
+  const startToolbarDrag = (clientX: number, clientY: number, target: HTMLElement) => {
+    const navElem = target.closest('nav');
+    if (!navElem) return;
+    const rect = navElem.getBoundingClientRect();
+    const startX = clientX;
+    const startY = clientY;
+    const initialX = rect.left;
+    const initialY = rect.top;
+
+    setIsDraggingToolbar(true);
+
+    const handleMove = (moveX: number, moveY: number) => {
+      const deltaX = moveX - startX;
+      const deltaY = moveY - startY;
+      const newX = Math.max(10, Math.min(window.innerWidth - 80, initialX + deltaX));
+      const newY = Math.max(70, Math.min(window.innerHeight - 300, initialY + deltaY));
+      setToolbarPos({ x: newX, y: newY });
+    };
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      moveEvent.preventDefault();
+      handleMove(moveEvent.clientX, moveEvent.clientY);
+    };
+
+    const handleTouchMove = (touchEvent: TouchEvent) => {
+      if (touchEvent.touches.length > 0) {
+        touchEvent.preventDefault();
+        handleMove(touchEvent.touches[0].clientX, touchEvent.touches[0].clientY);
+      }
+    };
+
+    const handleDragEnd = () => {
+      setIsDraggingToolbar(false);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleDragEnd);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleDragEnd);
+      window.removeEventListener('touchcancel', handleDragEnd);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove, { passive: false });
+    window.addEventListener('mouseup', handleDragEnd);
+    window.addEventListener('touchmove', handleTouchMove, { passive: false });
+    window.addEventListener('touchend', handleDragEnd);
+    window.addEventListener('touchcancel', handleDragEnd);
+  };
 
   const handleToolbarDragStart = (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    const navElem = (e.currentTarget as HTMLElement).closest('nav');
-    if (!navElem) return;
-    const rect = navElem.getBoundingClientRect();
-    const startX = e.clientX;
-    const startY = e.clientY;
-    const initialX = rect.left;
-    const initialY = rect.top;
+    startToolbarDrag(e.clientX, e.clientY, e.currentTarget as HTMLElement);
+  };
 
-    const handleMouseMove = (moveEvent: MouseEvent) => {
-      const deltaX = moveEvent.clientX - startX;
-      const deltaY = moveEvent.clientY - startY;
-      const newX = Math.max(10, Math.min(window.innerWidth - 80, initialX + deltaX));
-      const newY = Math.max(70, Math.min(window.innerHeight - 360, initialY + deltaY));
-      setToolbarPos({ x: newX, y: newY });
-    };
-
-    const handleMouseUp = () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
+  const handleToolbarTouchStart = (e: React.TouchEvent) => {
+    e.stopPropagation();
+    if (e.touches.length > 0) {
+      startToolbarDrag(e.touches[0].clientX, e.touches[0].clientY, e.currentTarget as HTMLElement);
+    }
   };
 
   // Pan & Zoom state
@@ -1080,14 +1111,19 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
             ? { left: `${toolbarPos.x}px`, top: `${toolbarPos.y}px`, transform: 'none' }
             : undefined
         }
-        className="fixed left-6 top-1/2 -translate-y-1/2 z-40 flex flex-col items-center py-3 px-1.5 gap-2.5 bg-white/95 backdrop-blur-xl border border-white/80 shadow-2xl rounded-3xl w-16 glass-panel select-none transition-shadow"
+        className={`fixed left-6 top-1/2 -translate-y-1/2 z-40 flex flex-col items-center py-3 px-1.5 gap-2.5 bg-white/95 backdrop-blur-xl border border-white/80 shadow-2xl rounded-3xl w-16 glass-panel select-none transition-shadow ${
+          isDraggingToolbar ? 'ring-2 ring-[#004ac6]/50 shadow-2xl scale-[1.02]' : ''
+        }`}
       >
         {/* Drag Handle to move toolbar */}
         <div
           onMouseDown={handleToolbarDragStart}
+          onTouchStart={handleToolbarTouchStart}
           onDoubleClick={() => setToolbarPos(null)}
-          className="w-full flex items-center justify-center py-1 cursor-grab active:cursor-grabbing text-[#737686] hover:text-[#004ac6] border-b border-[#c3c6d7]/30 group"
-          title="Click & Drag to move tool anywhere on canvas (Double-click to reset)"
+          className={`w-full flex items-center justify-center py-1.5 border-b border-[#c3c6d7]/30 group select-none ${
+            isDraggingToolbar ? 'cursor-grabbing text-[#004ac6]' : 'cursor-grab text-[#737686] hover:text-[#004ac6]'
+          }`}
+          title="Hold & Drag to move toolbar anywhere on canvas (Double-click to reset)"
         >
           <span className="material-symbols-outlined text-lg group-hover:scale-110 transition-transform">
             drag_indicator
@@ -1269,22 +1305,6 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
           title="Connect Tool (Click source node then target node)"
         >
           <span className="material-symbols-outlined">schema</span>
-        </button>
-
-        <div className="w-8 h-px bg-[#c3c6d7]/50 my-0.5"></div>
-
-        {/* AI Generator Button */}
-        <button
-          onClick={onOpenAiModal}
-          className="w-10 h-10 rounded-full flex items-center justify-center text-[#943700] bg-[#ffdbcd]/60 hover:bg-[#ffdbcd] transition-all border border-[#ffb596]/60 shadow-sm"
-          title="AI Generate Diagram"
-        >
-          <span
-            className="material-symbols-outlined"
-            style={{ fontVariationSettings: "'FILL' 1" }}
-          >
-            auto_awesome
-          </span>
         </button>
       </nav>
 

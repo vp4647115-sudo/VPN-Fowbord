@@ -4,7 +4,6 @@ import { ChatMessage } from '../types';
 interface TeamChatSidebarProps {
   chatMessages: ChatMessage[];
   onSendMessage: (text: string) => void;
-  onAskAi: (text: string) => void;
   isOpen: boolean;
   onToggleOpen: () => void;
 }
@@ -12,30 +11,18 @@ interface TeamChatSidebarProps {
 export const TeamChatSidebar: React.FC<TeamChatSidebarProps> = ({
   chatMessages,
   onSendMessage,
-  onAskAi,
   isOpen,
   onToggleOpen,
 }) => {
   const [inputText, setInputText] = useState('');
-  const [isAiMode, setIsAiMode] = useState(false);
-  const [loadingAi, setLoadingAi] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText.trim()) return;
 
     const text = inputText.trim();
     setInputText('');
-
-    if (isAiMode || text.toLowerCase().startsWith('@ai')) {
-      const promptText = text.replace(/^@ai\s*/i, '');
-      onSendMessage(`@AI: ${promptText}`);
-      setLoadingAi(true);
-      await onAskAi(promptText);
-      setLoadingAi(false);
-    } else {
-      onSendMessage(text);
-    }
+    onSendMessage(text);
   };
 
   if (!isOpen) {
@@ -43,12 +30,12 @@ export const TeamChatSidebar: React.FC<TeamChatSidebarProps> = ({
       <button
         onClick={onToggleOpen}
         className="fixed right-4 top-20 z-40 bg-white/90 backdrop-blur-md border border-white/80 text-[#004ac6] hover:bg-[#004ac6] hover:text-white p-3 rounded-2xl shadow-xl flex items-center gap-2 transition-all hover:scale-105 group glass-panel"
-        title="Open Team Chat & AI Assistant"
+        title="Open Team Chat"
       >
         <span className="material-symbols-outlined text-xl">forum</span>
         <span className="text-xs font-bold hidden sm:inline">Team Chat</span>
         {chatMessages.length > 0 && (
-          <span className="w-2 h-2 rounded-full bg-[#943700] animate-ping"></span>
+          <span className="w-2 h-2 rounded-full bg-[#004ac6] animate-ping"></span>
         )}
       </button>
     );
@@ -64,32 +51,13 @@ export const TeamChatSidebar: React.FC<TeamChatSidebarProps> = ({
           </span>
           <h2 className="font-bold text-sm text-[#191c1e]">Team Chat</h2>
         </div>
-        <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => setIsAiMode(!isAiMode)}
-            className={`px-2 py-1 rounded-full text-xs font-semibold flex items-center gap-1 transition-colors ${
-              isAiMode
-                ? 'bg-[#004ac6] text-white'
-                : 'bg-[#ffdbcd] text-[#943700] hover:bg-[#ffb596]'
-            }`}
-            title="Toggle AI Co-Architect Chat Mode"
-          >
-            <span
-              className="material-symbols-outlined text-xs"
-              style={{ fontVariationSettings: "'FILL' 1" }}
-            >
-              auto_awesome
-            </span>
-            {isAiMode ? 'AI Active' : 'Ask AI'}
-          </button>
-          <button
-            onClick={onToggleOpen}
-            className="text-[#737686] hover:text-[#191c1e] hover:bg-[#e0e3e5] p-1 rounded-lg transition-colors ml-1"
-            title="Hide Sidebar for Full Canvas View"
-          >
-            <span className="material-symbols-outlined text-lg">chevron_right</span>
-          </button>
-        </div>
+        <button
+          onClick={onToggleOpen}
+          className="text-[#737686] hover:text-[#191c1e] hover:bg-[#e0e3e5] p-1 rounded-lg transition-colors"
+          title="Hide Sidebar"
+        >
+          <span className="material-symbols-outlined text-lg">chevron_right</span>
+        </button>
       </div>
 
       {/* Messages Scroll Area */}
@@ -107,7 +75,6 @@ export const TeamChatSidebar: React.FC<TeamChatSidebarProps> = ({
           }
 
           const isSelf = msg.author === 'You';
-          const isAi = msg.isAi || msg.author === 'FlowBoard AI';
 
           return (
             <div
@@ -119,11 +86,7 @@ export const TeamChatSidebar: React.FC<TeamChatSidebarProps> = ({
               <div className="flex items-center gap-1.5 px-0.5">
                 <span
                   className={`text-[11px] font-bold ${
-                    isSelf
-                      ? 'text-[#004ac6]'
-                      : isAi
-                      ? 'text-[#943700]'
-                      : 'text-[#191c1e]'
+                    isSelf ? 'text-[#004ac6]' : 'text-[#191c1e]'
                   }`}
                 >
                   {msg.author}
@@ -135,8 +98,6 @@ export const TeamChatSidebar: React.FC<TeamChatSidebarProps> = ({
                 className={`p-3 rounded-2xl text-xs max-w-[88%] leading-relaxed ${
                   isSelf
                     ? 'bg-[#004ac6] text-white rounded-tr-none shadow-xs'
-                    : isAi
-                    ? 'bg-[#ffdbcd]/40 border border-[#ffb596]/60 text-[#191c1e] rounded-tl-none shadow-xs'
                     : 'bg-[#f2f4f6] text-[#191c1e] rounded-tl-none border border-[#c3c6d7]/30'
                 }`}
               >
@@ -145,18 +106,6 @@ export const TeamChatSidebar: React.FC<TeamChatSidebarProps> = ({
             </div>
           );
         })}
-
-        {loadingAi && (
-          <div className="flex items-center gap-2 p-3 bg-[#ffdbcd]/30 text-[#943700] rounded-2xl text-xs font-medium animate-pulse">
-            <span
-              className="material-symbols-outlined text-sm animate-spin"
-              style={{ fontVariationSettings: "'FILL' 1" }}
-            >
-              auto_awesome
-            </span>
-            FlowBoard AI is thinking...
-          </div>
-        )}
       </div>
 
       {/* Input Form */}
@@ -166,9 +115,7 @@ export const TeamChatSidebar: React.FC<TeamChatSidebarProps> = ({
             type="text"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
-            placeholder={
-              isAiMode ? 'Ask AI about this board...' : 'Type a message or @AI...'
-            }
+            placeholder="Type a message..."
             className="w-full bg-[#f2f4f6] border border-[#c3c6d7] focus:border-[#004ac6] focus:bg-white rounded-xl py-2 pl-3.5 pr-10 text-xs font-normal text-[#191c1e] outline-none transition-all"
           />
           <button
