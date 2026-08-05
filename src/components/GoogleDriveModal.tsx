@@ -37,8 +37,12 @@ export const GoogleDriveModal: React.FC<GoogleDriveModalProps> = ({
     try {
       setIsLoading(true);
       const res = await fetch('/api/drive/status');
+      if (!res.ok) return;
+      const contentType = res.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) return;
+      
       const data = await res.json();
-      if (data.success) {
+      if (data && data.success) {
         setIsConnected(data.connected);
         if (data.linkedFolderUrl) setLinkedFolderUrl(data.linkedFolderUrl);
         if (data.linkedFolderId) setLinkedFolderId(data.linkedFolderId);
@@ -48,7 +52,7 @@ export const GoogleDriveModal: React.FC<GoogleDriveModalProps> = ({
         }
       }
     } catch (e) {
-      console.error('Failed to check Drive status', e);
+      console.warn('Drive status endpoint not available:', e);
     } finally {
       setIsLoading(false);
     }
@@ -57,12 +61,16 @@ export const GoogleDriveModal: React.FC<GoogleDriveModalProps> = ({
   const fetchFiles = async () => {
     try {
       const res = await fetch('/api/drive/files');
+      if (!res.ok) return;
+      const contentType = res.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) return;
+
       const data = await res.json();
-      if (data.success && Array.isArray(data.files)) {
+      if (data && data.success && Array.isArray(data.files)) {
         setFiles(data.files);
       }
     } catch (e) {
-      console.error('Failed to fetch Drive files', e);
+      console.warn('Drive files endpoint not available:', e);
     }
   };
 

@@ -9,6 +9,8 @@ import { AiDiagramModal } from './components/AiDiagramModal';
 import { ShareModal } from './components/ShareModal';
 import { SettingsModal } from './components/SettingsModal';
 import { TeamInviteModal } from './components/TeamInviteModal';
+import { GoogleDriveModal } from './components/GoogleDriveModal';
+import { SupabaseModal } from './components/SupabaseModal';
 import { auth, loginWithGoogle, logoutUser, syncProjectToFirebase, getUserProjectsFromFirebase, deleteProjectFromFirebase } from './lib/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 
@@ -22,6 +24,9 @@ export default function App() {
   >('My Projects');
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Canvas background grid style
+  const [gridStyle, setGridStyle] = useState<'dot' | 'line' | 'blank'>('dot');
+
   // Team & Modals state
   const [activeTeamName, setActiveTeamName] = useState('Engineering Flow Team');
   const [joinedTeamNotice, setJoinedTeamNotice] = useState<string | null>(null);
@@ -29,6 +34,8 @@ export default function App() {
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [isDriveModalOpen, setIsDriveModalOpen] = useState(false);
+  const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
 
   // Check URL parameters for team join invitation link (?joinTeam=...&teamName=...)
@@ -71,16 +78,25 @@ export default function App() {
   // Fetch initial projects from server
   useEffect(() => {
     fetch('/api/projects')
-      .then((res) => res.json())
+      .then(async (res) => {
+        if (!res.ok) {
+          throw new Error(`Server status ${res.status}`);
+        }
+        const contentType = res.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+          throw new Error('Response is not JSON');
+        }
+        return res.json();
+      })
       .then((data) => {
-        if (data.success && data.projects) {
+        if (data && data.success && Array.isArray(data.projects) && data.projects.length > 0) {
           setProjects(data.projects);
-          if (data.projects.length > 0) {
-            setCurrentProject(data.projects[0]);
-          }
+          setCurrentProject(data.projects[0]);
         }
       })
-      .catch((err) => console.error('Failed to load projects from server:', err));
+      .catch((err) => {
+        console.warn('Backend API endpoint not available or returned non-JSON, using local/Firebase state:', err.message);
+      });
   }, []);
 
   // Handle select project
@@ -91,31 +107,51 @@ export default function App() {
 
   // Create new blank project
   const handleNewProject = async () => {
+    const newProj: Project = {
+      id: 'proj-' + Date.now(),
+      title: 'Blank Canvas Flow',
+      description: 'Interactive AI whiteboard canvas',
+      category: 'My Projects',
+      updatedAt: new Date().toISOString(),
+      updatedLabel: 'Just now',
+      userId: currentUser?.uid || 'guest',
+      nodes: [],
+      connectors: [],
+      comments: [],
+      chat: [],
+    };
+
     try {
       const res = await fetch('/api/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: 'Blank Canvas Flow',
-          description: 'Interactive AI whiteboard canvas',
-          userId: currentUser?.uid || 'guest',
-          nodes: [],
-          connectors: [],
-        }),
+        body: JSON.stringify(newProj),
       });
-      const data = await res.json();
-      if (data.success && data.project) {
-        setProjects((prev) => [data.project, ...prev]);
-        setCurrentProject(data.project);
-        setViewMode('workspace');
-
-        // Save to Firebase under user ID
-        if (currentUser) {
-          syncProjectToFirebase(data.project, currentUser.uid);
+      if (res.ok) {
+        const contentType = res.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const data = await res.json();
+          if (data && data.success && data.project) {
+            setProjects((prev) => [data.project, ...prev]);
+            setCurrentProject(data.project);
+            setViewMode('workspace');
+            if (currentUser) {
+              syncProjectToFirebase(data.project, currentUser.uid);
+            }
+            return;
+          }
         }
       }
     } catch (err) {
-      console.error('Failed to create new project:', err);
+      console.warn('Backend API project creation unavailable, using local state:', err);
+    }
+
+    // Local state fallback
+    setProjects((prev) => [newProj, ...prev]);
+    setCurrentProject(newProj);
+    setViewMode('workspace');
+    if (currentUser) {
+      syncProjectToFirebase(newProj, currentUser.uid);
     }
   };
 
@@ -142,12 +178,12 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedProject),
       });
-
-      if (currentUser) {
-        syncProjectToFirebase(updatedProject, currentUser.uid);
-      }
     } catch (err) {
-      console.error('Failed to save project update to backend:', err);
+      console.warn('Backend update failed, saved locally:', err);
+    }
+
+    if (currentUser) {
+      syncProjectToFirebase(updatedProject, currentUser.uid);
     }
   };
 
@@ -158,11 +194,16 @@ export default function App() {
       if (!targetProj) return;
 
       const updated = { ...targetProj, category: 'Trash' as const };
-      await fetch(`/api/projects/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updated),
-      });
+      
+      try {
+        await fetch(`/api/projects/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updated),
+        });
+      } catch (e) {
+        console.warn('Backend trash update fallback');
+      }
 
       setProjects((prev) => prev.map((p) => (p.id === id ? updated : p)));
       if (currentProject?.id === id) {
@@ -180,7 +221,11 @@ export default function App() {
   // Permanently delete project
   const handlePermanentDeleteProject = async (id: string) => {
     try {
-      await fetch(`/api/projects/${id}`, { method: 'DELETE' });
+      try {
+        await fetch(`/api/projects/${id}`, { method: 'DELETE' });
+      } catch (e) {
+        console.warn('Backend delete fallback');
+      }
       setProjects((prev) => prev.filter((p) => p.id !== id));
       if (currentUser) {
         deleteProjectFromFirebase(id);
@@ -197,11 +242,15 @@ export default function App() {
       if (!targetProj) return;
 
       const restored = { ...targetProj, category: 'My Projects' as const };
-      await fetch(`/api/projects/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(restored),
-      });
+      try {
+        await fetch(`/api/projects/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(restored),
+        });
+      } catch (e) {
+        console.warn('Backend restore fallback');
+      }
 
       setProjects((prev) => prev.map((p) => (p.id === id ? restored : p)));
       if (currentUser) {
@@ -379,6 +428,8 @@ export default function App() {
         onOpenAiModal={() => setIsAiModalOpen(true)}
         onOpenShareModal={() => setIsShareModalOpen(true)}
         onOpenTeamModal={() => setIsTeamModalOpen(true)}
+        onOpenDriveModal={() => setIsDriveModalOpen(true)}
+        onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
         activeTeamName={activeTeamName}
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
@@ -435,6 +486,7 @@ export default function App() {
                 project={currentProject}
                 onUpdateProject={handleUpdateProject}
                 onOpenAiModal={() => setIsAiModalOpen(true)}
+                gridStyle={gridStyle}
               />
               <TeamChatSidebar
                 chatMessages={currentProject.chat || []}
@@ -464,6 +516,10 @@ export default function App() {
       <SettingsModal
         isOpen={isSettingsModalOpen}
         onClose={() => setIsSettingsModalOpen(false)}
+        onOpenDriveModal={() => setIsDriveModalOpen(true)}
+        onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
+        gridStyle={gridStyle}
+        onChangeGridStyle={setGridStyle}
       />
 
       <TeamInviteModal
@@ -472,6 +528,23 @@ export default function App() {
         currentUser={currentUser}
         activeTeamName={activeTeamName}
         onUpdateTeamName={setActiveTeamName}
+      />
+
+      <GoogleDriveModal
+        isOpen={isDriveModalOpen}
+        onClose={() => setIsDriveModalOpen(false)}
+        currentProject={currentProject}
+        onProjectImported={(proj) => {
+          setProjects((prev) => [proj, ...prev]);
+          setCurrentProject(proj);
+          setViewMode('workspace');
+          setIsDriveModalOpen(false);
+        }}
+      />
+
+      <SupabaseModal
+        isOpen={isSupabaseModalOpen}
+        onClose={() => setIsSupabaseModalOpen(false)}
       />
     </div>
   );

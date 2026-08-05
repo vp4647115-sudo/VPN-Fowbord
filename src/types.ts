@@ -86,6 +86,7 @@ export interface Project {
   updatedLabel: string;
   category: 'My Projects' | 'Shared with me' | 'Templates' | 'Trash';
   thumbnail?: string;
+  userId?: string;
   nodes: CanvasNode[];
   connectors: Connector[];
   comments: CommentItem[];

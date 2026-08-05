@@ -89,8 +89,19 @@ export async function loginWithGoogle() {
       }, { merge: true });
     }
     return user;
-  } catch (err) {
-    console.error('Google Sign-In Error:', err);
+  } catch (err: any) {
+    console.warn('Google Sign-In Notice:', err?.code || err?.message || err);
+    if (err?.code === 'auth/unauthorized-domain') {
+      alert(
+        'Google Sign-In Notice:\n\n' +
+        'The current domain (' + window.location.hostname + ') is not yet added to Authorized Domains in your Firebase console.\n\n' +
+        'To enable Google Auth for this custom domain, add ' + window.location.hostname + ' under:\n' +
+        'Firebase Console -> Authentication -> Settings -> Authorized Domains.\n\n' +
+        'You can continue using FlowBoard AI as a guest!'
+      );
+    } else if (err?.code === 'auth/popup-blocked') {
+      alert('Popup was blocked by your browser. Please allow popups for this site to sign in with Google.');
+    }
     throw err;
   }
 }

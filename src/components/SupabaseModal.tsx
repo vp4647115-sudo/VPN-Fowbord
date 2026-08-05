@@ -18,6 +18,9 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({ isOpen, onClose })
     try {
       setLoading(true);
       const res = await fetch('/api/supabase/status');
+      if (!res.ok) return;
+      const contentType = res.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) return;
       const data = await res.json();
       if (data.success) {
         setIsConfigured(data.configured);

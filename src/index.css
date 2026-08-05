@@ -9,11 +9,22 @@
   }
 }
 
-/* Canvas background grid pattern */
+/* Canvas background grid patterns */
 .canvas-bg {
   background-color: #ffffff;
   background-image: radial-gradient(#c3c6d7 1.5px, transparent 1.5px);
   background-size: 24px 24px;
+}
+
+.canvas-bg-lines {
+  background-color: #ffffff;
+  background-image: linear-gradient(to right, #e2e8f0 1.5px, transparent 1.5px), linear-gradient(to bottom, #e2e8f0 1.5px, transparent 1.5px);
+  background-size: 24px 24px;
+}
+
+.canvas-bg-blank {
+  background-color: #ffffff;
+  background-image: none;
 }
 
 .canvas-bg-dark {

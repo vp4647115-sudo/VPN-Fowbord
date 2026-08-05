@@ -6,6 +6,7 @@ interface CanvasWorkspaceProps {
   project: Project;
   onUpdateProject: (updated: Partial<Project>) => void;
   onOpenAiModal: () => void;
+  gridStyle?: 'dot' | 'line' | 'blank';
 }
 
 type ActiveTool = 'select' | 'pan' | 'draw' | 'shape-draw' | 'connect';
@@ -38,6 +39,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   project,
   onUpdateProject,
   onOpenAiModal,
+  gridStyle = 'dot',
 }) => {
   // Tool & Navigation state
   const [activeTool, setActiveTool] = useState<ActiveTool>('select');
@@ -705,7 +707,9 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
-      className={`absolute inset-0 canvas-bg z-0 overflow-hidden select-none pt-16 ${
+      className={`absolute inset-0 ${
+        gridStyle === 'line' ? 'canvas-bg-lines' : gridStyle === 'blank' ? 'canvas-bg-blank' : 'canvas-bg'
+      } z-0 overflow-hidden select-none pt-16 ${
         activeTool === 'pan' || isSpacePressed
           ? 'cursor-grab active:cursor-grabbing'
           : activeTool === 'draw' || activeTool === 'shape-draw'
