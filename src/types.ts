@@ -8,6 +8,7 @@ export type NodeType =
   | 'triangle'
   | 'star'
   | 'database'
+  | 'table'
   | 'api-gateway'
   | 'credentials'
   | 'sticky'
@@ -17,6 +18,12 @@ export type NodeType =
 export interface Point {
   x: number;
   y: number;
+}
+
+export interface TableColumn {
+  name: string;
+  type: string;
+  isPk?: boolean;
 }
 
 export interface CanvasNode {
@@ -37,6 +44,8 @@ export interface CanvasNode {
   fontWeight?: 'normal' | 'semibold' | 'bold';
   textAlign?: 'left' | 'center' | 'right';
   opacity?: number;
+  // Table schema columns
+  columns?: TableColumn[];
   // Freehand path points
   points?: Point[];
   strokeColor?: string;

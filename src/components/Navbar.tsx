@@ -14,6 +14,7 @@ interface NavbarProps {
   onOpenTeamModal?: () => void;
   onOpenDriveModal?: () => void;
   onOpenSupabaseModal?: () => void;
+  onOpenJwtModal?: () => void;
   activeTeamName?: string;
   searchQuery: string;
   setSearchQuery: (query: string) => void;
@@ -35,6 +36,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenTeamModal,
   onOpenDriveModal,
   onOpenSupabaseModal,
+  onOpenJwtModal,
   activeTeamName = 'Engineering Flow Team',
   searchQuery,
   setSearchQuery,
@@ -277,10 +279,25 @@ export const Navbar: React.FC<NavbarProps> = ({
                         Sync with Supabase DB
                       </button>
                     )}
+
+                    {onOpenJwtModal && (
+                      <button
+                        onClick={() => {
+                          setShowExportMenu(false);
+                          onOpenJwtModal();
+                        }}
+                        className="flex items-center gap-2.5 p-2 rounded-xl text-xs font-semibold text-[#191c1e] hover:bg-blue-50 hover:text-blue-700 transition-colors text-left"
+                      >
+                        <span className="material-symbols-outlined text-base text-blue-600">key</span>
+                        JWT Auth & Worker API
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
             )}
+
+            {/* JWT Worker Auth operates in background */}
 
             {onOpenTeamModal && (
               <button

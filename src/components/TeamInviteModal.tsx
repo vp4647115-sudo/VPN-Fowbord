@@ -22,6 +22,8 @@ export const TeamInviteModal: React.FC<TeamInviteModalProps> = ({
   const [role, setRole] = useState<'Editor' | 'Viewer'>('Editor');
   const [copiedLink, setCopiedLink] = useState(false);
   const [sentEmailNotice, setSentEmailNotice] = useState(false);
+  const [sendingInvite, setSendingInvite] = useState(false);
+  const [inviteNoticeMessage, setInviteNoticeMessage] = useState('');
 
   const [members, setMembers] = useState([
     {
@@ -56,9 +58,6 @@ export const TeamInviteModal: React.FC<TeamInviteModalProps> = ({
   )}&teamName=${encodeURIComponent(teamName)}`;
 
   if (!isOpen) return null;
-
-  const [sendingInvite, setSendingInvite] = useState(false);
-  const [inviteNoticeMessage, setInviteNoticeMessage] = useState('');
 
   const handleSaveTeamName = (e: React.FormEvent) => {
     e.preventDefault();

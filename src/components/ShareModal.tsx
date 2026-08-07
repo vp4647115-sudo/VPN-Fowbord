@@ -14,6 +14,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   const [copied, setCopied] = useState(false);
   const [emailInput, setEmailInput] = useState('');
   const [role, setRole] = useState<'editor' | 'viewer'>('editor');
+  const [inviteNotice, setInviteNotice] = useState<string | null>(null);
   const [collaborators, setCollaborators] = useState([
     { name: 'Sarah J.', email: 'sarah.j@company.com', role: 'Editor', avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCwPBGHiOhZQZOdBeV8jg-VDavja64yLgjjMDzT8VLXOLOE5m3n39kWdGTwR035aAGQxuoH7At2YohrrZOCcH1FkZ-LfdM-Z_LRpIuFvT8Eem4s2ZiCtiyx5cMifY-jZCT8ZpN2y0awNo5TDlHpjvMxf4st5EHgESaAAwIGz7LEOjSHWGl2nnEZKaTETi1GeQh6J6c5i_g43LuO5F50RVSuewQ8uPmyAukbGw8DdUt6PQwkCDEOUYuQ3w' },
     { name: 'David M.', email: 'david.m@company.com', role: 'Viewer', avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBG6BJB04lreGcQ9jGuinsqXqlQC98P_TTwybxHyrZyC5lFrY7UzMMXC0GUcomI5OS8cbQNbAInTPEe1kT6okUXeGJpjyOiC4a-FdxfjXYMGX5khcf7va0pNooUya0k7FBJ342gCRxHvrr8q78pOFAlizh3CHkp5PNanbFRmv61bvYKZ9I57-4xeywqKKamMLgpqcAo2zjo75-hpNKy63LGBan6DXMyxByWs-4IviOdW9Fthw2BdVrpNw' },
@@ -27,8 +28,6 @@ export const ShareModal: React.FC<ShareModalProps> = ({
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
-
-  const [inviteNotice, setInviteNotice] = useState<string | null>(null);
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();

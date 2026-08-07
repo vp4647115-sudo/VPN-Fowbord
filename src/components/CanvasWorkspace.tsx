@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { CanvasNode, Connector, CommentItem, Project, Point, NodeType } from '../types';
 import { exportProjectToPng, exportProjectToSvg, exportProjectToJson } from '../lib/exportUtils';
+import { PromptInput } from './ui/ai-chat-input';
 
 interface CanvasWorkspaceProps {
   project: Project;
@@ -49,6 +50,88 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [selectedConnectorId, setSelectedConnectorId] = useState<string | null>(null);
 
+  // AI Tool & Generation State
+  const [isAiGenerating, setIsAiGenerating] = useState(false);
+  const [showAiTool, setShowAiTool] = useState(true);
+  const [aiNotice, setAiNotice] = useState<string | null>(null);
+
+  const handleAiSubmit = async (
+    promptText: string,
+    meta: { model: string; effort: string; attachments: File[] }
+  ) => {
+    if (!promptText.trim()) return;
+    setIsAiGenerating(true);
+    setAiNotice(`Generating diagram with ${meta.model}...`);
+
+    try {
+      const res = await fetch('/api/ai/generate-diagram', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: promptText,
+          model: meta.model,
+          effort: meta.effort,
+          diagramType: 'Architecture and Flow',
+          visualStyle: 'Professional SaaS'
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success && data.diagram) {
+        const { nodes: newNodes, connectors: newConnectors, title: newTitle } = data.diagram;
+        
+        // Calculate offset position for new nodes so they don't overlap
+        const existingMaxX = project.nodes.length > 0 ? Math.max(...project.nodes.map((n) => n.x + (n.width || 180))) : 100;
+        const startX = project.nodes.length > 0 ? existingMaxX + 150 : 200;
+
+        const createdNodes: CanvasNode[] = (newNodes || []).map((n: any, idx: number) => ({
+          id: n.id || `ai-node-${Date.now()}-${idx}`,
+          type: (n.type as NodeType) || 'rectangle',
+          title: n.title || 'AI Service',
+          subtitle: n.subtitle || '',
+          x: (n.x || 200) + (project.nodes.length > 0 ? startX - 200 : 0),
+          y: (n.y || 150),
+          color: n.color || '#ffffff',
+          borderColor: n.borderColor || '#004ac6',
+          width: n.type === 'table' ? 240 : 190,
+          height: n.type === 'table' ? 200 : 85,
+          columns: n.columns || (n.type === 'table' ? [
+            { name: 'id', type: 'UUID', isPk: true },
+            { name: 'name', type: 'VARCHAR(100)' },
+            { name: 'created_at', type: 'TIMESTAMP' }
+          ] : undefined),
+        }));
+
+        const createdConnectors: Connector[] = (newConnectors || []).map((c: any, idx: number) => ({
+          id: c.id || `ai-conn-${Date.now()}-${idx}`,
+          fromId: c.fromId,
+          toId: c.toId,
+          label: c.label || '',
+          style: c.style || 'solid',
+          color: c.color || '#004ac6',
+        }));
+
+        onUpdateProject({
+          title: project.title === 'Untitled FlowBoard' && newTitle ? newTitle : project.title,
+          nodes: [...project.nodes, ...createdNodes],
+          connectors: [...project.connectors, ...createdConnectors],
+        });
+
+        setAiNotice(`✨ Created ${createdNodes.length} nodes & ${createdConnectors.length} connections!`);
+        setTimeout(() => setAiNotice(null), 5000);
+      } else {
+        setAiNotice(`AI Error: ${data.error || 'Failed to generate diagram'}`);
+        setTimeout(() => setAiNotice(null), 5000);
+      }
+    } catch (err: any) {
+      console.error('AI Generation error:', err);
+      setAiNotice('Failed to generate diagram. Please check connection and try again.');
+      setTimeout(() => setAiNotice(null), 4000);
+    } finally {
+      setIsAiGenerating(false);
+    }
+  };
+
   // Moveable Toolbar State
   const [toolbarPos, setToolbarPos] = useState<{ x: number; y: number } | null>(null);
   const [isDraggingToolbar, setIsDraggingToolbar] = useState(false);
@@ -73,6 +156,10 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
     };
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
+      if (moveEvent.buttons === 0) {
+        handleDragEnd();
+        return;
+      }
       moveEvent.preventDefault();
       handleMove(moveEvent.clientX, moveEvent.clientY);
     };
@@ -81,6 +168,8 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       if (touchEvent.touches.length > 0) {
         touchEvent.preventDefault();
         handleMove(touchEvent.touches[0].clientX, touchEvent.touches[0].clientY);
+      } else {
+        handleDragEnd();
       }
     };
 
@@ -88,16 +177,20 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       setIsDraggingToolbar(false);
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleDragEnd);
+      window.removeEventListener('pointerup', handleDragEnd);
       window.removeEventListener('touchmove', handleTouchMove);
       window.removeEventListener('touchend', handleDragEnd);
       window.removeEventListener('touchcancel', handleDragEnd);
+      window.removeEventListener('blur', handleDragEnd);
     };
 
     window.addEventListener('mousemove', handleMouseMove, { passive: false });
     window.addEventListener('mouseup', handleDragEnd);
+    window.addEventListener('pointerup', handleDragEnd);
     window.addEventListener('touchmove', handleTouchMove, { passive: false });
     window.addEventListener('touchend', handleDragEnd);
     window.addEventListener('touchcancel', handleDragEnd);
+    window.addEventListener('blur', handleDragEnd);
   };
 
   const handleToolbarDragStart = (e: React.MouseEvent) => {
@@ -346,6 +439,14 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
 
   // Canvas Mouse Move
   const handleCanvasMouseMove = (e: React.MouseEvent) => {
+    // Safety check: If mouse button is released (buttons === 0), release tracking immediately
+    if (e.buttons === 0) {
+      if (isPanning || isDrawing || isDrawingShape || isBoxSelecting || draggingNodeId !== null) {
+        handleCanvasMouseUp();
+        return;
+      }
+    }
+
     const canvasPt = screenToCanvasCoords(e.clientX, e.clientY);
     setMouseCanvasPos(canvasPt);
 
@@ -481,6 +582,38 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
     setDraggingNodeId(null);
   };
 
+  // Ref for handleCanvasMouseUp so global window listener always references current state
+  const handleCanvasMouseUpRef = useRef(handleCanvasMouseUp);
+  useEffect(() => {
+    handleCanvasMouseUpRef.current = handleCanvasMouseUp;
+  });
+
+  // Global window release listener to guarantee dragging/panning/drawing stops on mouseup anywhere or blur
+  useEffect(() => {
+    const isInteracting =
+      draggingNodeId !== null ||
+      isPanning ||
+      isDrawing ||
+      isDrawingShape ||
+      isBoxSelecting;
+
+    if (!isInteracting) return;
+
+    const handleGlobalRelease = () => {
+      handleCanvasMouseUpRef.current();
+    };
+
+    window.addEventListener('mouseup', handleGlobalRelease);
+    window.addEventListener('pointerup', handleGlobalRelease);
+    window.addEventListener('blur', handleGlobalRelease);
+
+    return () => {
+      window.removeEventListener('mouseup', handleGlobalRelease);
+      window.removeEventListener('pointerup', handleGlobalRelease);
+      window.removeEventListener('blur', handleGlobalRelease);
+    };
+  }, [draggingNodeId, isPanning, isDrawing, isDrawingShape, isBoxSelecting]);
+
   // Node Mouse Down Handling (Supports Selection & Connecting Line Creation)
   const handleNodeMouseDown = (e: React.MouseEvent, node: CanvasNode) => {
     if (activeTool === 'draw' || activeTool === 'shape-draw') {
@@ -577,21 +710,32 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
     const id = 'node-' + Date.now();
     const isText = type === 'text';
     const isNormal = type === 'normal-shape';
+    const isTable = type === 'table';
+
+    const defaultCols = isTable
+      ? [
+          { name: 'id', type: 'UUID', isPk: true },
+          { name: 'username', type: 'VARCHAR(100)' },
+          { name: 'email', type: 'VARCHAR(255)' },
+          { name: 'created_at', type: 'TIMESTAMP' },
+        ]
+      : undefined;
 
     const newNode: CanvasNode = {
       id,
       type,
-      title: isText ? 'Heading / Text' : isNormal ? 'Normal Shape' : getShapeDefaultTitle(type),
-      subtitle: isText ? '' : 'Click to customize',
-      x: Math.round(centerPt.x - 90),
-      y: Math.round(centerPt.y - 45),
-      width: isText ? 180 : type === 'circle' || type === 'oval' ? 120 : 180,
-      height: isText ? 50 : type === 'circle' || type === 'oval' ? 120 : 85,
+      title: isText ? 'Heading / Text' : isTable ? 'Users Table' : isNormal ? 'Normal Shape' : getShapeDefaultTitle(type),
+      subtitle: isText ? '' : isTable ? 'Database Entity' : 'Click to customize',
+      x: Math.round(centerPt.x - 110),
+      y: Math.round(centerPt.y - 60),
+      width: isText ? 180 : type === 'circle' || type === 'oval' ? 130 : isTable ? 220 : type === 'database' ? 190 : type === 'diamond' ? 160 : type === 'triangle' ? 160 : type === 'star' ? 160 : 190,
+      height: isText ? 50 : type === 'circle' || type === 'oval' ? 130 : isTable ? 170 : type === 'database' ? 120 : type === 'diamond' ? 130 : type === 'triangle' ? 130 : type === 'star' ? 150 : 90,
       color: isText ? 'transparent' : type === 'sticky' ? '#ffdbcd' : '#ffffff',
       borderColor: isText ? 'transparent' : type === 'sticky' ? '#943700' : '#004ac6',
       strokeWidth: isText ? 0 : 2,
       fontSize: isText ? '24' : '16',
       opacity: 100,
+      columns: defaultCols,
     };
 
     onUpdateProject({ nodes: [...project.nodes, newNode] });
@@ -607,6 +751,8 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
         return 'Normal Shape';
       case 'text':
         return 'Text Element';
+      case 'table':
+        return 'Database Table';
       case 'rectangle':
         return 'Process Box';
       case 'circle':
@@ -617,7 +763,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       case 'triangle':
         return 'Filter Node';
       case 'star':
-        return 'Milestone';
+        return 'Milestone Star';
       case 'database':
         return 'Database Store';
       case 'cloud':
@@ -735,6 +881,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       onMouseDown={handleCanvasMouseDown}
       onMouseMove={handleCanvasMouseMove}
       onMouseUp={handleCanvasMouseUp}
+      onMouseLeave={handleCanvasMouseUp}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
@@ -1006,98 +1153,622 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
             );
           }
 
-          // Render Shape Nodes
+          // Render Shape Nodes with distinct vector geometries and rich components
           const titleFontPx = getFontPx(node.fontSize);
           const subFontPx = Math.max(10, Math.round(titleFontPx * 0.7));
-          const isTextNode = node.type === 'text';
+          const w = node.width || (node.type === 'table' ? 220 : node.type === 'circle' || node.type === 'oval' ? 130 : 180);
+          const h = node.height || (node.type === 'table' ? 170 : node.type === 'circle' || node.type === 'oval' ? 130 : 80);
+          const fillColor = node.color || '#ffffff';
+          const strokeColor = node.borderColor || '#004ac6';
+          const strokeWidth = node.strokeWidth !== undefined ? node.strokeWidth : 2;
 
-          return (
-            <div
-              key={node.id}
-              onMouseDown={(e) => handleNodeMouseDown(e, node)}
-              onTouchStart={(e) => handleNodeTouchStart(e, node)}
-              style={{
-                left: `${node.x}px`,
-                top: `${node.y}px`,
-                width: node.width ? `${node.width}px` : isTextNode ? 'auto' : '180px',
-                minHeight: node.height ? `${node.height}px` : isTextNode ? 'auto' : '80px',
-                backgroundColor: node.color || (isTextNode ? 'transparent' : '#ffffff'),
-                borderColor: node.borderColor || (isTextNode ? 'transparent' : '#004ac6'),
-                borderWidth: `${node.strokeWidth !== undefined ? node.strokeWidth : isTextNode ? 0 : 2}px`,
-                borderStyle: node.strokeStyle || 'solid',
-                opacity: node.opacity !== undefined ? node.opacity / 100 : 1,
-              }}
-              className={`absolute cursor-pointer transition-shadow duration-150 z-20 ${
-                isTextNode ? 'p-2' : 'p-4 shadow-sm hover:shadow-md'
-              } flex flex-col justify-center group ${
-                node.type === 'circle' || node.type === 'oval'
-                  ? 'rounded-full items-center text-center'
-                  : node.type === 'diamond'
-                  ? 'rotate-0 border-2 rounded-2xl items-center text-center'
-                  : node.type === 'sticky'
-                  ? 'rounded-xl shadow-md'
-                  : node.type === 'cloud'
-                  ? 'rounded-3xl border-2'
-                  : node.type === 'triangle'
-                  ? 'rounded-xl items-center text-center'
-                  : 'rounded-xl'
-              } ${
-                isSelected
-                  ? isTextNode
-                    ? 'ring-2 ring-[#004ac6] border-dashed ring-offset-2'
-                    : 'ring-2 ring-[#004ac6] ring-offset-2 shadow-xl'
-                  : ''
-              } ${isConnectingFrom ? 'ring-2 ring-emerald-500 animate-pulse' : ''}`}
-            >
-              {/* Title & Subtitle */}
-              <div
-                className={`w-full ${
-                  node.textAlign === 'center'
-                    ? 'text-center'
-                    : node.textAlign === 'right'
-                    ? 'text-right'
-                    : 'text-left'
-                }`}
-              >
+          switch (node.type) {
+            case 'database':
+              return (
                 <div
+                  key={node.id}
+                  onMouseDown={(e) => handleNodeMouseDown(e, node)}
+                  onTouchStart={(e) => handleNodeTouchStart(e, node)}
                   style={{
-                    fontSize: `${titleFontPx}px`,
-                    fontWeight: node.fontWeight || 'bold',
-                    lineHeight: 1.25,
-                    color:
-                      node.color === '#1e293b' || node.color === '#2563eb'
-                        ? '#ffffff'
-                        : '#191c1e',
+                    left: `${node.x}px`,
+                    top: `${node.y}px`,
+                    width: `${w}px`,
+                    height: `${h}px`,
+                    opacity: node.opacity !== undefined ? node.opacity / 100 : 1,
                   }}
+                  className={`absolute cursor-pointer transition-shadow duration-150 z-20 group flex flex-col justify-center items-center text-center p-3 ${
+                    isSelected ? 'ring-2 ring-[#004ac6] ring-offset-2 rounded-xl shadow-xl' : ''
+                  } ${isConnectingFrom ? 'ring-2 ring-emerald-500 animate-pulse' : ''}`}
                 >
-                  {node.title}
-                </div>
-                {node.subtitle && (
-                  <div
-                    className="mt-0.5 opacity-80"
-                    style={{
-                      fontSize: `${subFontPx}px`,
-                      color:
-                        node.color === '#1e293b' || node.color === '#2563eb'
-                          ? '#e2e8f0'
-                          : '#434655',
-                    }}
-                  >
-                    {node.subtitle}
+                  <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible z-0 drop-shadow-sm">
+                    <ellipse
+                      cx={w / 2}
+                      cy={h * 0.22}
+                      rx={w / 2 - 2}
+                      ry={h * 0.18}
+                      fill={fillColor === 'transparent' ? '#ffffff' : fillColor}
+                      stroke={strokeColor}
+                      strokeWidth={strokeWidth}
+                    />
+                    <path
+                      d={`M 2,${h * 0.22} L 2,${h * 0.78} A ${w / 2 - 2},${h * 0.18} 0 0,0 ${w - 2},${h * 0.78} L ${w - 2},${h * 0.22}`}
+                      fill={fillColor === 'transparent' ? '#ffffff' : fillColor}
+                      stroke={strokeColor}
+                      strokeWidth={strokeWidth}
+                    />
+                    <path
+                      d={`M 2,${h * 0.42} A ${w / 2 - 2},${h * 0.15} 0 0,0 ${w - 2},${h * 0.42}`}
+                      fill="none"
+                      stroke={strokeColor}
+                      strokeWidth={1.5}
+                    />
+                    <path
+                      d={`M 2,${h * 0.6} A ${w / 2 - 2},${h * 0.15} 0 0,0 ${w - 2},${h * 0.6}`}
+                      fill="none"
+                      stroke={strokeColor}
+                      strokeWidth={1.5}
+                    />
+                  </svg>
+                  <div className="relative z-10 flex flex-col items-center justify-center px-2 py-1">
+                    <span className="material-symbols-outlined text-xl mb-0.5 text-[#004ac6]">
+                      database
+                    </span>
+                    <div
+                      style={{
+                        fontSize: `${titleFontPx}px`,
+                        fontWeight: node.fontWeight || 'bold',
+                        lineHeight: 1.2,
+                        color: fillColor === '#1e293b' || fillColor === '#2563eb' ? '#ffffff' : '#191c1e',
+                      }}
+                      className="truncate max-w-[160px]"
+                    >
+                      {node.title}
+                    </div>
+                    {node.subtitle && (
+                      <div
+                        style={{ fontSize: `${subFontPx}px` }}
+                        className="opacity-80 truncate max-w-[160px] text-slate-600 mt-0.5"
+                      >
+                        {node.subtitle}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                  <button
+                    onClick={(e) => handleStartConnection(e, node.id)}
+                    className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-[#004ac6] hover:bg-[#2563eb] text-white rounded-full flex items-center justify-center shadow-md hover:scale-125 transition-transform z-30"
+                    title="Click to draw connecting line"
+                  >
+                    <span className="material-symbols-outlined text-xs">add</span>
+                  </button>
+                </div>
+              );
 
-              {/* Connection Handle Pin Button (Right Edge) */}
-              <button
-                onClick={(e) => handleStartConnection(e, node.id)}
-                className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-[#004ac6] hover:bg-[#2563eb] text-white rounded-full flex items-center justify-center shadow-md hover:scale-125 transition-transform z-30"
-                title="Click to draw connecting line"
-              >
-                <span className="material-symbols-outlined text-xs">add</span>
-              </button>
-            </div>
-          );
+            case 'diamond':
+              return (
+                <div
+                  key={node.id}
+                  onMouseDown={(e) => handleNodeMouseDown(e, node)}
+                  onTouchStart={(e) => handleNodeTouchStart(e, node)}
+                  style={{
+                    left: `${node.x}px`,
+                    top: `${node.y}px`,
+                    width: `${w}px`,
+                    height: `${h}px`,
+                    opacity: node.opacity !== undefined ? node.opacity / 100 : 1,
+                  }}
+                  className={`absolute cursor-pointer transition-shadow duration-150 z-20 group flex flex-col justify-center items-center text-center p-3 ${
+                    isSelected ? 'ring-2 ring-[#004ac6] ring-offset-2 rounded-xl shadow-xl' : ''
+                  } ${isConnectingFrom ? 'ring-2 ring-emerald-500 animate-pulse' : ''}`}
+                >
+                  <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible z-0 drop-shadow-sm">
+                    <polygon
+                      points={`${w / 2},2 ${w - 2},${h / 2} ${w / 2},${h - 2} 2,${h / 2}`}
+                      fill={fillColor === 'transparent' ? '#ffdbcd' : fillColor}
+                      stroke={strokeColor || '#943700'}
+                      strokeWidth={strokeWidth}
+                      strokeDasharray={node.strokeStyle === 'dashed' ? '4 4' : undefined}
+                    />
+                  </svg>
+                  <div className="relative z-10 flex flex-col items-center justify-center p-2 max-w-[80%]">
+                    <div
+                      style={{
+                        fontSize: `${titleFontPx}px`,
+                        fontWeight: node.fontWeight || 'bold',
+                        lineHeight: 1.2,
+                        color: fillColor === '#1e293b' || fillColor === '#2563eb' ? '#ffffff' : '#191c1e',
+                      }}
+                      className="text-center"
+                    >
+                      {node.title}
+                    </div>
+                    {node.subtitle && (
+                      <div
+                        style={{ fontSize: `${subFontPx}px` }}
+                        className="opacity-80 text-center text-slate-700 mt-0.5"
+                      >
+                        {node.subtitle}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={(e) => handleStartConnection(e, node.id)}
+                    className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-[#004ac6] hover:bg-[#2563eb] text-white rounded-full flex items-center justify-center shadow-md hover:scale-125 transition-transform z-30"
+                    title="Click to draw connecting line"
+                  >
+                    <span className="material-symbols-outlined text-xs">add</span>
+                  </button>
+                </div>
+              );
+
+            case 'triangle':
+              return (
+                <div
+                  key={node.id}
+                  onMouseDown={(e) => handleNodeMouseDown(e, node)}
+                  onTouchStart={(e) => handleNodeTouchStart(e, node)}
+                  style={{
+                    left: `${node.x}px`,
+                    top: `${node.y}px`,
+                    width: `${w}px`,
+                    height: `${h}px`,
+                    opacity: node.opacity !== undefined ? node.opacity / 100 : 1,
+                  }}
+                  className={`absolute cursor-pointer transition-shadow duration-150 z-20 group flex flex-col justify-end items-center text-center p-3 pb-4 ${
+                    isSelected ? 'ring-2 ring-[#004ac6] ring-offset-2 rounded-xl shadow-xl' : ''
+                  } ${isConnectingFrom ? 'ring-2 ring-emerald-500 animate-pulse' : ''}`}
+                >
+                  <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible z-0 drop-shadow-sm">
+                    <polygon
+                      points={`${w / 2},2 ${w - 2},${h - 2} 2,${h - 2}`}
+                      fill={fillColor}
+                      stroke={strokeColor}
+                      strokeWidth={strokeWidth}
+                      strokeDasharray={node.strokeStyle === 'dashed' ? '4 4' : undefined}
+                    />
+                  </svg>
+                  <div className="relative z-10 flex flex-col items-center justify-center max-w-[80%] mb-1">
+                    <div
+                      style={{
+                        fontSize: `${titleFontPx}px`,
+                        fontWeight: node.fontWeight || 'bold',
+                        lineHeight: 1.2,
+                        color: fillColor === '#1e293b' || fillColor === '#2563eb' ? '#ffffff' : '#191c1e',
+                      }}
+                      className="text-center"
+                    >
+                      {node.title}
+                    </div>
+                    {node.subtitle && (
+                      <div
+                        style={{ fontSize: `${subFontPx}px` }}
+                        className="opacity-80 text-center text-slate-600 mt-0.5"
+                      >
+                        {node.subtitle}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={(e) => handleStartConnection(e, node.id)}
+                    className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-[#004ac6] hover:bg-[#2563eb] text-white rounded-full flex items-center justify-center shadow-md hover:scale-125 transition-transform z-30"
+                    title="Click to draw connecting line"
+                  >
+                    <span className="material-symbols-outlined text-xs">add</span>
+                  </button>
+                </div>
+              );
+
+            case 'star':
+              return (
+                <div
+                  key={node.id}
+                  onMouseDown={(e) => handleNodeMouseDown(e, node)}
+                  onTouchStart={(e) => handleNodeTouchStart(e, node)}
+                  style={{
+                    left: `${node.x}px`,
+                    top: `${node.y}px`,
+                    width: `${w}px`,
+                    height: `${h}px`,
+                    opacity: node.opacity !== undefined ? node.opacity / 100 : 1,
+                  }}
+                  className={`absolute cursor-pointer transition-shadow duration-150 z-20 group flex flex-col justify-center items-center text-center p-3 ${
+                    isSelected ? 'ring-2 ring-[#004ac6] ring-offset-2 rounded-xl shadow-xl' : ''
+                  } ${isConnectingFrom ? 'ring-2 ring-emerald-500 animate-pulse' : ''}`}
+                >
+                  <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible z-0 drop-shadow-sm">
+                    <polygon
+                      points={`${w * 0.5},2 ${w * 0.62},${h * 0.35} ${w - 2},${h * 0.38} ${w * 0.72},${h * 0.62} ${w * 0.81},${h - 2} ${w * 0.5},${h * 0.8} ${w * 0.19},${h - 2} ${w * 0.28},${h * 0.62} 2,${h * 0.38} ${w * 0.38},${h * 0.35}`}
+                      fill={fillColor === 'transparent' ? '#fef3c7' : fillColor}
+                      stroke={strokeColor || '#d97706'}
+                      strokeWidth={strokeWidth}
+                    />
+                  </svg>
+                  <div className="relative z-10 flex flex-col items-center justify-center max-w-[65%]">
+                    <div
+                      style={{
+                        fontSize: `${titleFontPx}px`,
+                        fontWeight: node.fontWeight || 'bold',
+                        lineHeight: 1.2,
+                        color: '#78350f',
+                      }}
+                      className="text-center"
+                    >
+                      {node.title}
+                    </div>
+                    {node.subtitle && (
+                      <div
+                        style={{ fontSize: `${subFontPx}px` }}
+                        className="opacity-80 text-center text-amber-900 mt-0.5"
+                      >
+                        {node.subtitle}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={(e) => handleStartConnection(e, node.id)}
+                    className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-[#004ac6] hover:bg-[#2563eb] text-white rounded-full flex items-center justify-center shadow-md hover:scale-125 transition-transform z-30"
+                    title="Click to draw connecting line"
+                  >
+                    <span className="material-symbols-outlined text-xs">add</span>
+                  </button>
+                </div>
+              );
+
+            case 'cloud':
+              return (
+                <div
+                  key={node.id}
+                  onMouseDown={(e) => handleNodeMouseDown(e, node)}
+                  onTouchStart={(e) => handleNodeTouchStart(e, node)}
+                  style={{
+                    left: `${node.x}px`,
+                    top: `${node.y}px`,
+                    width: `${w}px`,
+                    height: `${h}px`,
+                    opacity: node.opacity !== undefined ? node.opacity / 100 : 1,
+                  }}
+                  className={`absolute cursor-pointer transition-shadow duration-150 z-20 group flex flex-col justify-center items-center text-center p-3 ${
+                    isSelected ? 'ring-2 ring-[#004ac6] ring-offset-2 rounded-2xl shadow-xl' : ''
+                  } ${isConnectingFrom ? 'ring-2 ring-emerald-500 animate-pulse' : ''}`}
+                >
+                  <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible z-0 drop-shadow-sm">
+                    <path
+                      d={`M ${w * 0.2},${h * 0.75}
+                         C ${w * 0.05},${h * 0.75} ${w * 0.05},${h * 0.45} ${w * 0.25},${h * 0.45}
+                         C ${w * 0.25},${h * 0.2} ${w * 0.55},${h * 0.15} ${w * 0.65},${h * 0.35}
+                         C ${w * 0.82},${h * 0.25} ${w * 0.98},${h * 0.5} ${w * 0.85},${h * 0.75}
+                         C ${w * 0.98},${h * 0.92} ${w * 0.75},${h * 0.98} ${w * 0.65},${h * 0.92}
+                         C ${w * 0.5},${h * 0.98} ${w * 0.3},${h * 0.95} ${w * 0.2},${h * 0.75} Z`}
+                      fill={fillColor === 'transparent' ? '#e0f2fe' : fillColor}
+                      stroke={strokeColor || '#0284c7'}
+                      strokeWidth={strokeWidth}
+                    />
+                  </svg>
+                  <div className="relative z-10 flex flex-col items-center justify-center px-4 py-1">
+                    <span className="material-symbols-outlined text-lg mb-0.5 text-sky-600">
+                      cloud_queue
+                    </span>
+                    <div
+                      style={{
+                        fontSize: `${titleFontPx}px`,
+                        fontWeight: node.fontWeight || 'bold',
+                        lineHeight: 1.2,
+                        color: '#0369a1',
+                      }}
+                      className="text-center"
+                    >
+                      {node.title}
+                    </div>
+                    {node.subtitle && (
+                      <div style={{ fontSize: `${subFontPx}px` }} className="opacity-80 text-sky-800 mt-0.5">
+                        {node.subtitle}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={(e) => handleStartConnection(e, node.id)}
+                    className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-[#004ac6] hover:bg-[#2563eb] text-white rounded-full flex items-center justify-center shadow-md hover:scale-125 transition-transform z-30"
+                    title="Click to draw connecting line"
+                  >
+                    <span className="material-symbols-outlined text-xs">add</span>
+                  </button>
+                </div>
+              );
+
+            case 'table': {
+              const columns = node.columns && node.columns.length > 0 ? node.columns : [
+                { name: 'id', type: 'UUID', isPk: true },
+                { name: 'username', type: 'VARCHAR(100)' },
+                { name: 'email', type: 'VARCHAR(255)' },
+                { name: 'created_at', type: 'TIMESTAMP' },
+              ];
+
+              return (
+                <div
+                  key={node.id}
+                  onMouseDown={(e) => handleNodeMouseDown(e, node)}
+                  onTouchStart={(e) => handleNodeTouchStart(e, node)}
+                  style={{
+                    left: `${node.x}px`,
+                    top: `${node.y}px`,
+                    width: `${w}px`,
+                    minHeight: `${h}px`,
+                    opacity: node.opacity !== undefined ? node.opacity / 100 : 1,
+                  }}
+                  className={`absolute cursor-pointer transition-shadow duration-150 z-20 group rounded-xl overflow-hidden bg-white border-2 border-[#004ac6] shadow-md ${
+                    isSelected ? 'ring-2 ring-[#004ac6] ring-offset-2 shadow-xl' : ''
+                  } ${isConnectingFrom ? 'ring-2 ring-emerald-500 animate-pulse' : ''}`}
+                >
+                  <div className="bg-[#004ac6] text-white px-3 py-2 flex items-center justify-between gap-1.5 font-bold text-xs select-none">
+                    <div className="flex items-center gap-1.5 truncate">
+                      <span className="material-symbols-outlined text-sm text-blue-200">table_chart</span>
+                      <span className="truncate">{node.title}</span>
+                    </div>
+                    <span className="bg-white/20 text-[10px] px-1.5 py-0.5 rounded text-white font-mono uppercase tracking-wider">
+                      TABLE
+                    </span>
+                  </div>
+
+                  <div className="p-2 flex flex-col gap-1 overflow-y-auto max-h-[220px] bg-slate-50/90">
+                    {columns.map((col, idx) => (
+                      <div key={idx} className="flex items-center justify-between text-[11px] font-mono px-2 py-1 bg-white rounded border border-slate-200 shadow-2xs">
+                        <div className="flex items-center gap-1.5 truncate">
+                          {col.isPk ? (
+                            <span className="material-symbols-outlined text-amber-500 text-xs" title="Primary Key">key</span>
+                          ) : (
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                          )}
+                          <span className={`truncate font-semibold ${col.isPk ? 'text-amber-900' : 'text-slate-800'}`}>
+                            {col.name}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-slate-500 bg-slate-100 px-1 rounded border border-slate-200">
+                          {col.type}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <button
+                    onClick={(e) => handleStartConnection(e, node.id)}
+                    className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-[#004ac6] hover:bg-[#2563eb] text-white rounded-full flex items-center justify-center shadow-md hover:scale-125 transition-transform z-30"
+                    title="Click to draw connecting line"
+                  >
+                    <span className="material-symbols-outlined text-xs">add</span>
+                  </button>
+                </div>
+              );
+            }
+
+            case 'api-gateway':
+              return (
+                <div
+                  key={node.id}
+                  onMouseDown={(e) => handleNodeMouseDown(e, node)}
+                  onTouchStart={(e) => handleNodeTouchStart(e, node)}
+                  style={{
+                    left: `${node.x}px`,
+                    top: `${node.y}px`,
+                    width: `${w}px`,
+                    minHeight: `${h}px`,
+                    backgroundColor: fillColor,
+                    borderColor: strokeColor,
+                    borderWidth: `${strokeWidth}px`,
+                    opacity: node.opacity !== undefined ? node.opacity / 100 : 1,
+                  }}
+                  className={`absolute cursor-pointer transition-shadow duration-150 z-20 group rounded-xl overflow-hidden bg-white shadow-md p-3 flex flex-col justify-between ${
+                    isSelected ? 'ring-2 ring-[#004ac6] ring-offset-2 shadow-xl' : ''
+                  } ${isConnectingFrom ? 'ring-2 ring-emerald-500 animate-pulse' : ''}`}
+                >
+                  <div className="flex items-center gap-2 border-b border-blue-100 pb-2 mb-1">
+                    <div className="w-7 h-7 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-xs">
+                      <span className="material-symbols-outlined text-base">router</span>
+                    </div>
+                    <div className="flex-1 truncate">
+                      <div className="text-xs font-bold text-slate-900 leading-tight truncate">{node.title}</div>
+                      <div className="text-[10px] text-blue-600 font-semibold truncate">{node.subtitle || 'API Gateway'}</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between text-[10px] text-slate-600 bg-blue-50/80 rounded px-2 py-1 font-mono">
+                    <span className="font-bold text-blue-700">REST / gRPC</span>
+                    <span>:8080</span>
+                  </div>
+
+                  <button
+                    onClick={(e) => handleStartConnection(e, node.id)}
+                    className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-[#004ac6] hover:bg-[#2563eb] text-white rounded-full flex items-center justify-center shadow-md hover:scale-125 transition-transform z-30"
+                    title="Click to draw connecting line"
+                  >
+                    <span className="material-symbols-outlined text-xs">add</span>
+                  </button>
+                </div>
+              );
+
+            case 'credentials':
+              return (
+                <div
+                  key={node.id}
+                  onMouseDown={(e) => handleNodeMouseDown(e, node)}
+                  onTouchStart={(e) => handleNodeTouchStart(e, node)}
+                  style={{
+                    left: `${node.x}px`,
+                    top: `${node.y}px`,
+                    width: `${w}px`,
+                    minHeight: `${h}px`,
+                    backgroundColor: fillColor,
+                    borderColor: strokeColor || '#2563eb',
+                    borderWidth: `${strokeWidth}px`,
+                    opacity: node.opacity !== undefined ? node.opacity / 100 : 1,
+                  }}
+                  className={`absolute cursor-pointer transition-shadow duration-150 z-20 group rounded-xl overflow-hidden bg-white shadow-md p-3 flex flex-col justify-between ${
+                    isSelected ? 'ring-2 ring-[#004ac6] ring-offset-2 shadow-xl' : ''
+                  } ${isConnectingFrom ? 'ring-2 ring-emerald-500 animate-pulse' : ''}`}
+                >
+                  <div className="flex items-center gap-2 border-b border-emerald-100 pb-2 mb-1">
+                    <div className="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow-xs">
+                      <span className="material-symbols-outlined text-base">key</span>
+                    </div>
+                    <div className="flex-1 truncate">
+                      <div className="text-xs font-bold text-slate-900 leading-tight truncate">{node.title}</div>
+                      <div className="text-[10px] text-emerald-600 font-semibold truncate">{node.subtitle || 'Auth Credentials'}</div>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1 text-[10px] font-mono text-slate-600 bg-emerald-50/80 p-1.5 rounded">
+                    <div className="flex justify-between"><span>Auth Type:</span><span className="font-bold text-emerald-800">OAuth2 / JWT</span></div>
+                  </div>
+
+                  <button
+                    onClick={(e) => handleStartConnection(e, node.id)}
+                    className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-[#004ac6] hover:bg-[#2563eb] text-white rounded-full flex items-center justify-center shadow-md hover:scale-125 transition-transform z-30"
+                    title="Click to draw connecting line"
+                  >
+                    <span className="material-symbols-outlined text-xs">add</span>
+                  </button>
+                </div>
+              );
+
+            case 'sticky':
+              return (
+                <div
+                  key={node.id}
+                  onMouseDown={(e) => handleNodeMouseDown(e, node)}
+                  onTouchStart={(e) => handleNodeTouchStart(e, node)}
+                  style={{
+                    left: `${node.x}px`,
+                    top: `${node.y}px`,
+                    width: `${w}px`,
+                    minHeight: `${h}px`,
+                    backgroundColor: fillColor || '#ffdbcd',
+                    borderColor: strokeColor || '#943700',
+                    borderWidth: `${strokeWidth}px`,
+                    opacity: node.opacity !== undefined ? node.opacity / 100 : 1,
+                  }}
+                  className={`absolute cursor-pointer transition-shadow duration-150 z-20 group rounded-xl p-3 shadow-md relative overflow-hidden flex flex-col justify-between ${
+                    isSelected ? 'ring-2 ring-[#004ac6] ring-offset-2 shadow-xl' : ''
+                  } ${isConnectingFrom ? 'ring-2 ring-emerald-500 animate-pulse' : ''}`}
+                >
+                  <div className="absolute top-0 right-0 w-5 h-5 bg-black/10 border-b border-l border-black/20 rounded-bl-md pointer-events-none"></div>
+
+                  <div>
+                    <div style={{ fontSize: `${titleFontPx}px` }} className="font-bold text-amber-950 leading-snug">{node.title}</div>
+                    {node.subtitle && <div style={{ fontSize: `${subFontPx}px` }} className="text-amber-900/80 mt-1">{node.subtitle}</div>}
+                  </div>
+
+                  <button
+                    onClick={(e) => handleStartConnection(e, node.id)}
+                    className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-[#004ac6] hover:bg-[#2563eb] text-white rounded-full flex items-center justify-center shadow-md hover:scale-125 transition-transform z-30"
+                    title="Click to draw connecting line"
+                  >
+                    <span className="material-symbols-outlined text-xs">add</span>
+                  </button>
+                </div>
+              );
+
+            case 'circle':
+            case 'oval':
+              return (
+                <div
+                  key={node.id}
+                  onMouseDown={(e) => handleNodeMouseDown(e, node)}
+                  onTouchStart={(e) => handleNodeTouchStart(e, node)}
+                  style={{
+                    left: `${node.x}px`,
+                    top: `${node.y}px`,
+                    width: `${w}px`,
+                    height: `${h}px`,
+                    backgroundColor: fillColor,
+                    borderColor: strokeColor,
+                    borderWidth: `${strokeWidth}px`,
+                    borderStyle: node.strokeStyle || 'solid',
+                    opacity: node.opacity !== undefined ? node.opacity / 100 : 1,
+                  }}
+                  className={`absolute cursor-pointer transition-shadow duration-150 z-20 group rounded-full flex flex-col items-center justify-center p-3 text-center shadow-sm ${
+                    isSelected ? 'ring-2 ring-[#004ac6] ring-offset-2 shadow-xl' : ''
+                  } ${isConnectingFrom ? 'ring-2 ring-emerald-500 animate-pulse' : ''}`}
+                >
+                  <div style={{ fontSize: `${titleFontPx}px` }} className="font-bold text-slate-900 leading-tight max-w-[90%] truncate">{node.title}</div>
+                  {node.subtitle && <div style={{ fontSize: `${subFontPx}px` }} className="text-slate-600 mt-0.5 max-w-[90%] truncate">{node.subtitle}</div>}
+
+                  <button
+                    onClick={(e) => handleStartConnection(e, node.id)}
+                    className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-[#004ac6] hover:bg-[#2563eb] text-white rounded-full flex items-center justify-center shadow-md hover:scale-125 transition-transform z-30"
+                    title="Click to draw connecting line"
+                  >
+                    <span className="material-symbols-outlined text-xs">add</span>
+                  </button>
+                </div>
+              );
+
+            default: {
+              const isTextNode = node.type === 'text';
+              return (
+                <div
+                  key={node.id}
+                  onMouseDown={(e) => handleNodeMouseDown(e, node)}
+                  onTouchStart={(e) => handleNodeTouchStart(e, node)}
+                  style={{
+                    left: `${node.x}px`,
+                    top: `${node.y}px`,
+                    width: node.width ? `${node.width}px` : isTextNode ? 'auto' : '180px',
+                    minHeight: node.height ? `${node.height}px` : isTextNode ? 'auto' : '80px',
+                    backgroundColor: fillColor || (isTextNode ? 'transparent' : '#ffffff'),
+                    borderColor: strokeColor || (isTextNode ? 'transparent' : '#004ac6'),
+                    borderWidth: `${strokeWidth !== undefined ? strokeWidth : isTextNode ? 0 : 2}px`,
+                    borderStyle: node.strokeStyle || 'solid',
+                    opacity: node.opacity !== undefined ? node.opacity / 100 : 1,
+                  }}
+                  className={`absolute cursor-pointer transition-shadow duration-150 z-20 ${
+                    isTextNode ? 'p-2' : 'p-4 shadow-sm hover:shadow-md'
+                  } flex flex-col justify-center rounded-xl group ${
+                    isSelected
+                      ? isTextNode
+                        ? 'ring-2 ring-[#004ac6] border-dashed ring-offset-2'
+                        : 'ring-2 ring-[#004ac6] ring-offset-2 shadow-xl'
+                      : ''
+                  } ${isConnectingFrom ? 'ring-2 ring-emerald-500 animate-pulse' : ''}`}
+                >
+                  <div
+                    className={`w-full ${
+                      node.textAlign === 'center'
+                        ? 'text-center'
+                        : node.textAlign === 'right'
+                        ? 'text-right'
+                        : 'text-left'
+                    }`}
+                  >
+                    <div
+                      style={{
+                        fontSize: `${titleFontPx}px`,
+                        fontWeight: node.fontWeight || 'bold',
+                        lineHeight: 1.25,
+                        color: fillColor === '#1e293b' || fillColor === '#2563eb' ? '#ffffff' : '#191c1e',
+                      }}
+                    >
+                      {node.title}
+                    </div>
+                    {node.subtitle && (
+                      <div
+                        className="mt-0.5 opacity-80"
+                        style={{
+                          fontSize: `${subFontPx}px`,
+                          color: fillColor === '#1e293b' || fillColor === '#2563eb' ? '#e2e8f0' : '#434655',
+                        }}
+                      >
+                        {node.subtitle}
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    onClick={(e) => handleStartConnection(e, node.id)}
+                    className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-[#004ac6] hover:bg-[#2563eb] text-white rounded-full flex items-center justify-center shadow-md hover:scale-125 transition-transform z-30"
+                    title="Click to draw connecting line"
+                  >
+                    <span className="material-symbols-outlined text-xs">add</span>
+                  </button>
+                </div>
+              );
+            }
+          }
         })}
       </div>
 
@@ -1259,6 +1930,8 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
               </span>
               <div className="grid grid-cols-2 gap-1.5">
                 {[
+                  { type: 'table', label: 'DB Table', icon: 'table_chart' },
+                  { type: 'database', label: 'Database', icon: 'database' },
                   { type: 'normal-shape', label: 'Normal Shape', icon: 'crop_5_4' },
                   { type: 'text', label: 'Text Shape', icon: 'title' },
                   { type: 'rectangle', label: 'Process Box', icon: 'check_box_outline_blank' },
@@ -1266,7 +1939,6 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                   { type: 'diamond', label: 'Decision Gate', icon: 'square' },
                   { type: 'triangle', label: 'Triangle', icon: 'change_history' },
                   { type: 'star', label: 'Milestone Star', icon: 'star_outline' },
-                  { type: 'database', label: 'Database', icon: 'database' },
                   { type: 'cloud', label: 'Cloud Service', icon: 'cloud_queue' },
                   { type: 'sticky', label: 'Sticky Note', icon: 'sticky_note_2' },
                   { type: 'credentials', label: 'Credentials', icon: 'key' },
@@ -1305,6 +1977,19 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
           title="Connect Tool (Click source node then target node)"
         >
           <span className="material-symbols-outlined">schema</span>
+        </button>
+
+        {/* AI Diagram Generator Tool Button */}
+        <button
+          onClick={() => setShowAiTool(!showAiTool)}
+          className={`w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-sm ${
+            showAiTool
+              ? 'bg-[#004ac6] text-white ring-2 ring-blue-400 scale-110'
+              : 'bg-blue-50 text-[#004ac6] hover:bg-[#004ac6] hover:text-white'
+          }`}
+          title="Toggle AI Flow Generator Tool"
+        >
+          <span className="material-symbols-outlined text-xl animate-sparkle">auto_awesome</span>
         </button>
       </nav>
 
@@ -1442,6 +2127,73 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                   placeholder="Subtitle or detail..."
                 />
               </div>
+
+              {/* Table Column Schema Controls */}
+              {primarySelectedNode.type === 'table' && (
+                <div className="flex flex-col gap-2 border-t border-[#c3c6d7]/30 pt-2.5 mt-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-[#737686] uppercase tracking-wider flex items-center gap-1">
+                      <span className="material-symbols-outlined text-sm text-[#004ac6]">table_chart</span>
+                      Columns ({primarySelectedNode.columns?.length || 4})
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const name = prompt('Column Name:', 'new_col');
+                        if (!name) return;
+                        const type = prompt('Column Type:', 'VARCHAR(255)') || 'VARCHAR(255)';
+                        const existingCols = primarySelectedNode.columns || [
+                          { name: 'id', type: 'UUID', isPk: true },
+                          { name: 'username', type: 'VARCHAR(100)' },
+                          { name: 'email', type: 'VARCHAR(255)' },
+                          { name: 'created_at', type: 'TIMESTAMP' },
+                        ];
+                        handleApplyStyleToSelected({
+                          columns: [...existingCols, { name, type }]
+                        });
+                      }}
+                      className="text-[10px] bg-[#004ac6] text-white px-2 py-1 rounded-lg font-bold hover:bg-[#2563eb] transition-colors flex items-center gap-1 shadow-2xs"
+                    >
+                      <span className="material-symbols-outlined text-xs">add</span>
+                      Add Column
+                    </button>
+                  </div>
+
+                  <div className="flex flex-col gap-1 max-h-40 overflow-y-auto">
+                    {(primarySelectedNode.columns || [
+                      { name: 'id', type: 'UUID', isPk: true },
+                      { name: 'username', type: 'VARCHAR(100)' },
+                      { name: 'email', type: 'VARCHAR(255)' },
+                      { name: 'created_at', type: 'TIMESTAMP' },
+                    ]).map((col, idx) => (
+                      <div key={idx} className="flex items-center justify-between bg-[#f2f4f6] px-2 py-1 rounded-lg text-xs font-mono">
+                        <div className="flex items-center gap-1.5 truncate">
+                          {col.isPk ? (
+                            <span className="material-symbols-outlined text-amber-500 text-xs">key</span>
+                          ) : (
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                          )}
+                          <span className="font-semibold text-slate-800 truncate">{col.name}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] text-slate-500 bg-white px-1.5 py-0.5 rounded border border-slate-200">{col.type}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const existingCols = primarySelectedNode.columns || [];
+                              const updated = existingCols.filter((_, i) => i !== idx);
+                              handleApplyStyleToSelected({ columns: updated });
+                            }}
+                            className="text-slate-400 hover:text-red-600 p-0.5"
+                          >
+                            <span className="material-symbols-outlined text-xs">close</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Font Size & Typography Control */}
               <div className="flex flex-col gap-2 border-t border-[#c3c6d7]/30 pt-2.5 mt-1">
@@ -1688,6 +2440,29 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
           Export PNG
         </button>
       </div>
+
+      {/* Floating AI Flow Generator Input Widget */}
+      {showAiTool && (
+        <div
+          onMouseDown={(e) => e.stopPropagation()}
+          onMouseUp={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2 pointer-events-auto max-w-xl w-full px-4 drop-shadow-2xl"
+        >
+          {aiNotice && (
+            <div className="bg-[#111827] text-white text-xs font-semibold px-4 py-2 rounded-full shadow-2xl flex items-center gap-2 border border-blue-500/40 animate-in fade-in zoom-in-95">
+              <span className="material-symbols-outlined text-sm text-blue-400 animate-spin">auto_awesome</span>
+              <span>{aiNotice}</span>
+            </div>
+          )}
+
+          <PromptInput
+            onSubmit={handleAiSubmit}
+            placeholder="Ask AI to generate architecture, flowcharts, database schema..."
+            loading={isAiGenerating}
+          />
+        </div>
+      )}
     </div>
   );
 };

@@ -5,6 +5,7 @@ interface SettingsModalProps {
   onClose: () => void;
   onOpenDriveModal?: () => void;
   onOpenSupabaseModal?: () => void;
+  onOpenJwtModal?: () => void;
   gridStyle?: 'dot' | 'line' | 'blank';
   onChangeGridStyle?: (style: 'dot' | 'line' | 'blank') => void;
 }
@@ -14,6 +15,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
   onOpenDriveModal,
   onOpenSupabaseModal,
+  onOpenJwtModal,
   gridStyle = 'dot',
   onChangeGridStyle,
 }) => {
@@ -108,7 +110,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <span className="material-symbols-outlined text-sm text-[#004ac6]">cloud_sync</span>
               Cloud Integrations
             </label>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               {onOpenDriveModal && (
                 <button
                   type="button"
@@ -116,10 +118,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     onClose();
                     onOpenDriveModal();
                   }}
-                  className="flex items-center justify-center gap-2 p-3 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-xl font-bold text-emerald-800 transition-colors shadow-2xs"
+                  className="flex items-center justify-center gap-1.5 p-2.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-xl font-bold text-emerald-800 transition-colors shadow-2xs"
                 >
-                  <span className="material-symbols-outlined text-lg text-emerald-600">add_to_drive</span>
-                  Google Drive
+                  <span className="material-symbols-outlined text-base text-emerald-600">add_to_drive</span>
+                  Drive
                 </button>
               )}
               {onOpenSupabaseModal && (
@@ -129,10 +131,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     onClose();
                     onOpenSupabaseModal();
                   }}
-                  className="flex items-center justify-center gap-2 p-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold transition-colors shadow-2xs"
+                  className="flex items-center justify-center gap-1.5 p-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold transition-colors shadow-2xs"
                 >
-                  <span className="material-symbols-outlined text-lg text-emerald-400">database</span>
+                  <span className="material-symbols-outlined text-base text-emerald-400">database</span>
                   Supabase DB
+                </button>
+              )}
+              {onOpenJwtModal && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenJwtModal();
+                  }}
+                  className="flex items-center justify-center gap-1.5 p-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-colors shadow-2xs"
+                >
+                  <span className="material-symbols-outlined text-base text-amber-300">key</span>
+                  JWT Worker
                 </button>
               )}
             </div>

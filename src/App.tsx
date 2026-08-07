@@ -10,6 +10,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { TeamInviteModal } from './components/TeamInviteModal';
 import { GoogleDriveModal } from './components/GoogleDriveModal';
 import { SupabaseModal } from './components/SupabaseModal';
+import { JwtAuthModal } from './components/JwtAuthModal';
 import { auth, loginWithGoogle, logoutUser, syncProjectToFirebase, getUserProjectsFromFirebase, deleteProjectFromFirebase } from './lib/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 
@@ -34,6 +35,7 @@ export default function App() {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isDriveModalOpen, setIsDriveModalOpen] = useState(false);
   const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
+  const [isJwtModalOpen, setIsJwtModalOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
 
   // Check URL parameters for team join invitation link (?joinTeam=...&teamName=...)
@@ -368,6 +370,7 @@ export default function App() {
         onOpenTeamModal={() => setIsTeamModalOpen(true)}
         onOpenDriveModal={() => setIsDriveModalOpen(true)}
         onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
+        onOpenJwtModal={() => setIsJwtModalOpen(true)}
         activeTeamName={activeTeamName}
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
@@ -447,6 +450,7 @@ export default function App() {
         onClose={() => setIsSettingsModalOpen(false)}
         onOpenDriveModal={() => setIsDriveModalOpen(true)}
         onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
+        onOpenJwtModal={() => setIsJwtModalOpen(true)}
         gridStyle={gridStyle}
         onChangeGridStyle={setGridStyle}
       />
@@ -474,6 +478,11 @@ export default function App() {
       <SupabaseModal
         isOpen={isSupabaseModalOpen}
         onClose={() => setIsSupabaseModalOpen(false)}
+      />
+
+      <JwtAuthModal
+        isOpen={isJwtModalOpen}
+        onClose={() => setIsJwtModalOpen(false)}
       />
     </div>
   );

@@ -97,7 +97,7 @@ export async function loginWithGoogle() {
     }
     return user;
   } catch (err: any) {
-    console.warn('Google Sign-In Popup unavailable, falling back to Guest session:', err?.code || err?.message || err);
+    console.warn('Google Sign-In notice:', err?.code || err?.message || err);
     try {
       const anonResult = await signInAnonymously(auth);
       const anonUser = anonResult.user;
@@ -111,9 +111,9 @@ export async function loginWithGoogle() {
         }, { merge: true });
       }
       return anonUser;
-    } catch (fallbackErr) {
-      console.error('Sign-in fallback failed:', fallbackErr);
-      throw fallbackErr;
+    } catch (fallbackErr: any) {
+      console.warn('Firebase Anonymous auth disabled or domain restricted. Operating in local guest mode.');
+      return null;
     }
   }
 }

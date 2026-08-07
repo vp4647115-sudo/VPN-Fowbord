@@ -3,6 +3,9 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
+import { google } from "googleapis";
+import { createClient } from "@supabase/supabase-js";
+import jwt from "jsonwebtoken";
 
 dotenv.config();
 
@@ -40,15 +43,27 @@ let projectsDatabase: Record<string, any> = {
     nodes: [
       { id: "node-1", type: "rectangle", title: "CRM Module", subtitle: "Customer Relationship Management", x: 200, y: 150, color: "#ffffff", borderColor: "#004ac6", width: 180, height: 80 },
       { id: "node-2", type: "credentials", title: "Auth Gateway", subtitle: "User login & JWT validation", x: 450, y: 150, color: "#ffffff", borderColor: "#2563eb", width: 200, height: 90 },
-      { id: "node-3", type: "database", title: "PostgreSQL Primary", subtitle: "Main ERP Database", x: 720, y: 150, color: "#f7f9fb", borderColor: "#004ac6", width: 180, height: 80 },
-      { id: "node-4", type: "diamond", title: "Authorized?", subtitle: "Check permissions", x: 480, y: 300, color: "#ffdbcd", borderColor: "#943700", width: 140, height: 90 },
-      { id: "node-5", type: "api-gateway", title: "API Gateway", subtitle: "REST & GraphQL Endpoints", x: 720, y: 300, color: "#2563eb", borderColor: "#004ac6", width: 180, height: 80 }
+      { id: "node-3", type: "database", title: "PostgreSQL Primary", subtitle: "Main ERP Database", x: 750, y: 150, color: "#f7f9fb", borderColor: "#004ac6", width: 190, height: 120 },
+      { id: "node-4", type: "diamond", title: "Authorized?", subtitle: "Check permissions", x: 450, y: 320, color: "#ffdbcd", borderColor: "#943700", width: 160, height: 120 },
+      { id: "node-5", type: "api-gateway", title: "API Gateway", subtitle: "REST & GraphQL Endpoints", x: 750, y: 320, color: "#2563eb", borderColor: "#004ac6", width: 180, height: 80 },
+      { id: "node-6", type: "table", title: "Users Entity Table", subtitle: "Database Schema", x: 430, y: 520, color: "#ffffff", borderColor: "#004ac6", width: 230, height: 180,
+        columns: [
+          { name: "id", type: "UUID", isPk: true },
+          { name: "username", type: "VARCHAR(100)" },
+          { name: "email", type: "VARCHAR(255)" },
+          { name: "role", type: "VARCHAR(50)" }
+        ]
+      }
     ],
     connectors: [
       { id: "conn-1", fromId: "node-1", toId: "node-2", label: "REST Call", style: "solid", color: "#004ac6" },
       { id: "conn-2", fromId: "node-2", toId: "node-4", label: "Verify Token", style: "dashed", color: "#737686" },
       { id: "conn-3", fromId: "node-4", toId: "node-5", label: "Yes", style: "solid", color: "#004ac6" },
-      { id: "conn-4", fromId: "node-5", toId: "node-3", label: "SQL Query", style: "solid", color: "#004ac6" }
+      { id: "conn-4", fromId: "node-5", toId: "node-3", label: "SQL Query", style: "solid", color: "#004ac6" },
+      { id: "conn-5", fromId: "node-6", toId: "node-2", label: "Auth Lookup", style: "solid", color: "#2563eb" },
+      { id: "conn-6", fromId: "node-6", toId: "node-3", label: "Store Schema", style: "solid", color: "#004ac6" },
+      { id: "conn-7", fromId: "node-6", toId: "node-4", label: "Permission Sync", style: "dashed", color: "#943700" },
+      { id: "conn-8", fromId: "node-6", toId: "node-5", label: "API Serializer", style: "solid", color: "#2563eb" }
     ],
     comments: [
       { id: "c-1", nodeId: "node-3", author: "Alex", time: "10:42 AM", text: "Do we need to update database indexes?" },
@@ -109,8 +124,6 @@ let projectsDatabase: Record<string, any> = {
 };
 
 // --- GOOGLE DRIVE OAUTH & INTEGRATION API ---
-import { google } from "googleapis";
-import { createClient } from "@supabase/supabase-js";
 
 // Supabase Database Integration
 let runtimeSupabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
@@ -208,6 +221,146 @@ app.post("/api/supabase/credentials", (req, res) => {
   runtimeSupabaseUrl = supabaseUrl.trim();
   runtimeSupabaseKey = supabaseKey.trim();
   res.json({ success: true, message: "Supabase credentials updated successfully!" });
+});
+
+// --- JWT AUTHENTICATION & SUPABASE DYNAMIC WORKER SYSTEM ---
+const JWT_SECRET = process.env.JWT_SECRET || process.env.SUPABASE_JWT_SECRET || "flowboard_supabase_jwt_secret_2026";
+const DYNAMIC_WORKER_URL = "https://hlgmhevrxoqutyeqesik.supabase.co/functions/v1/dynamic-worker";
+
+// Issue JWT Token with Supabase Key & Email (supports Microsoft Edge / Outlook / Custom Email & API Keys)
+app.post("/api/auth/jwt/issue", (req, res) => {
+  try {
+    const { email, role = "authenticated", apiKey, provider = "Microsoft Edge Email" } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ success: false, error: "Email address is required for JWT token generation" });
+    }
+
+    const payload = {
+      sub: email,
+      email: email,
+      role: role,
+      provider: provider,
+      apiKey: apiKey || runtimeSupabaseKey || "sb_anon_key_demo",
+      aud: "authenticated",
+      iss: "https://hlgmhevrxoqutyeqesik.supabase.co",
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + 24 * 3600 // 24 hours validity
+    };
+
+    const token = jwt.sign(payload, JWT_SECRET);
+
+    return res.json({
+      success: true,
+      token,
+      user: {
+        email,
+        role,
+        provider,
+        apiKey: apiKey || runtimeSupabaseKey ? "••••••••" : "Default Key"
+      },
+      expiresIn: "24h",
+      dynamicWorkerEndpoint: DYNAMIC_WORKER_URL
+    });
+  } catch (err: any) {
+    console.error("JWT Issue error:", err);
+    return res.status(500).json({ success: false, error: err.message || "Failed to issue JWT token" });
+  }
+});
+
+// Verify JWT Token / API Key
+app.post("/api/auth/jwt/verify", (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const token = req.body.token || (authHeader && authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null);
+
+    if (!token) {
+      return res.status(400).json({ success: false, valid: false, error: "No JWT token provided" });
+    }
+
+    const decoded = jwt.verify(token, JWT_SECRET);
+    return res.json({
+      success: true,
+      valid: true,
+      decoded,
+      dynamicWorkerEndpoint: DYNAMIC_WORKER_URL
+    });
+  } catch (err: any) {
+    return res.status(401).json({
+      success: false,
+      valid: false,
+      error: "Invalid or expired JWT token: " + err.message
+    });
+  }
+});
+
+// Supabase Dynamic Worker Integration Endpoint
+// Proxies requests directly to https://hlgmhevrxoqutyeqesik.supabase.co/functions/v1/dynamic-worker
+app.post("/api/supabase/dynamic-worker", async (req, res) => {
+  try {
+    const { action = "process_task", payload = {}, apiKey, token } = req.body;
+    const authHeader = req.headers.authorization;
+    const activeToken = token || (authHeader && authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null);
+
+    const activeApiKey = apiKey || runtimeSupabaseKey || process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy";
+
+    // Prepare headers for Supabase Dynamic Worker Edge Function
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "apikey": activeApiKey
+    };
+
+    if (activeToken) {
+      headers["Authorization"] = `Bearer ${activeToken}`;
+    } else {
+      headers["Authorization"] = `Bearer ${activeApiKey}`;
+    }
+
+    console.log(`[DynamicWorker] Invoking Supabase worker endpoint: ${DYNAMIC_WORKER_URL}`);
+
+    const response = await fetch(DYNAMIC_WORKER_URL, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        action,
+        payload,
+        timestamp: new Date().toISOString()
+      })
+    });
+
+    const responseText = await response.text();
+    let data: any = {};
+    try {
+      data = JSON.parse(responseText);
+    } catch (e) {
+      data = { rawText: responseText };
+    }
+
+    if (response.ok) {
+      return res.json({
+        success: true,
+        endpoint: DYNAMIC_WORKER_URL,
+        status: response.status,
+        result: data
+      });
+    } else {
+      // Return structured response with worker status
+      return res.json({
+        success: false,
+        endpoint: DYNAMIC_WORKER_URL,
+        status: response.status,
+        error: data.message || data.error || responseText || "Dynamic worker returned non-200 status",
+        workerResponse: data
+      });
+    }
+  } catch (err: any) {
+    console.error("Dynamic Worker Proxy Error:", err);
+    return res.status(500).json({
+      success: false,
+      endpoint: DYNAMIC_WORKER_URL,
+      error: err.message || "Failed to reach Supabase Dynamic Worker endpoint"
+    });
+  }
 });
 
 const LINKED_DRIVE_FOLDER_ID = "1UEWnpeuRRhMsBv67HQouRUo-yjDYeDuI";
@@ -673,7 +826,7 @@ app.delete("/api/projects/:id", async (req, res) => {
 // --- AI DIAGRAM GENERATION API WITH GEMINI ---
 app.post("/api/ai/generate-diagram", async (req, res) => {
   try {
-    const { prompt, diagramType = "Architecture", visualStyle = "Professional" } = req.body;
+    const { prompt, diagramType = "Architecture", visualStyle = "Professional", model = "gemini-2.5-flash", effort } = req.body;
 
     if (!prompt || typeof prompt !== "string") {
       return res.status(400).json({ success: false, error: "Prompt is required" });
@@ -687,7 +840,7 @@ Your goal is to parse user prompts and produce structured nodes and connectors f
 Always output valid JSON conforming strictly to the response schema provided.
 
 Guidelines for Node layout:
-- Position nodes logically in a grid flow (left-to-right x: 200, 450, 700, 950 or top-to-bottom y: 150, 300, 450).
+- Position nodes logically in a grid flow (left-to-right x: 200, 480, 760, 1040 or top-to-bottom y: 150, 320, 500).
 - Assign node types correctly:
   - 'oval': Start/End triggers
   - 'credentials': Authentication / login / security nodes
@@ -695,16 +848,25 @@ Guidelines for Node layout:
   - 'diamond': Decision branches or condition checks
   - 'database': Databases / caches / storage engines
   - 'api-gateway': Gateways / Load balancers / routers
+  - 'table': Database Entity Tables with columns (id, name, type, isPk)
   - 'sticky': Notes or annotations
+  - 'cloud': Cloud services
+  - 'star': Key milestone
 - Provide informative titles and clean sub-labels.
-- Define connecting arrows between nodes logically.
+- Define connecting arrows between nodes logically with labels.
 `;
 
-    const userContent = `Generate a ${diagramType} diagram in ${visualStyle} visual style for the following concept:
+    const userContent = `Generate a ${diagramType} diagram in ${visualStyle} visual style for the following prompt:
 "${prompt}"`;
 
+    // Normalize model string to official gemini model alias
+    let targetModel = "gemini-3.6-flash";
+    if (model && (model.includes("3.5") || model.includes("3.6") || model.includes("2.5") || model.includes("GPT") || model.includes("Opus"))) {
+      targetModel = "gemini-3.6-flash";
+    }
+
     const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
+      model: targetModel,
       contents: userContent,
       config: {
         systemInstruction,
@@ -723,14 +885,25 @@ Guidelines for Node layout:
                   id: { type: Type.STRING },
                   type: {
                     type: Type.STRING,
-                    description: "One of: oval, credentials, rectangle, diamond, database, api-gateway, sticky"
+                    description: "One of: oval, credentials, rectangle, diamond, database, api-gateway, sticky, table, cloud, star"
                   },
                   title: { type: Type.STRING },
                   subtitle: { type: Type.STRING },
                   x: { type: Type.NUMBER },
                   y: { type: Type.NUMBER },
                   color: { type: Type.STRING },
-                  borderColor: { type: Type.STRING }
+                  borderColor: { type: Type.STRING },
+                  columns: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        name: { type: Type.STRING },
+                        type: { type: Type.STRING },
+                        isPk: { type: Type.BOOLEAN }
+                      }
+                    }
+                  }
                 },
                 required: ["id", "type", "title", "x", "y"]
               }
