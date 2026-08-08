@@ -23,6 +23,7 @@ interface NavbarProps {
   activeCategory?: string;
   setActiveCategory?: (cat: any) => void;
   onOpenSettings?: () => void;
+  onOpenSkillModal?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -37,6 +38,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenDriveModal,
   onOpenSupabaseModal,
   onOpenJwtModal,
+  onOpenSkillModal,
   activeTeamName = 'Engineering Flow Team',
   searchQuery,
   setSearchQuery,
@@ -264,32 +266,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                       >
                         <span className="material-symbols-outlined text-base text-emerald-600">add_to_drive</span>
                         Save to Google Drive
-                      </button>
-                    )}
-
-                    {onOpenSupabaseModal && (
-                      <button
-                        onClick={() => {
-                          setShowExportMenu(false);
-                          onOpenSupabaseModal();
-                        }}
-                        className="flex items-center gap-2.5 p-2 rounded-xl text-xs font-semibold text-[#191c1e] hover:bg-slate-100 hover:text-slate-900 transition-colors text-left"
-                      >
-                        <span className="material-symbols-outlined text-base text-emerald-500">database</span>
-                        Sync with Supabase DB
-                      </button>
-                    )}
-
-                    {onOpenJwtModal && (
-                      <button
-                        onClick={() => {
-                          setShowExportMenu(false);
-                          onOpenJwtModal();
-                        }}
-                        className="flex items-center gap-2.5 p-2 rounded-xl text-xs font-semibold text-[#191c1e] hover:bg-blue-50 hover:text-blue-700 transition-colors text-left"
-                      >
-                        <span className="material-symbols-outlined text-base text-blue-600">key</span>
-                        JWT Auth & Worker API
                       </button>
                     )}
                   </div>

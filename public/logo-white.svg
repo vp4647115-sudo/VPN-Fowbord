@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 420" width="100%" height="100%">
+  <defs>
+    <linearGradient id="blueGradW" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#2563eb"/>
+    </linearGradient>
+    <linearGradient id="lineGradW" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#3b82f6"/>
+      <stop offset="50%" stop-color="#60a5fa"/>
+      <stop offset="100%" stop-color="#93c5fd"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Flow lines and nodes -->
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Main curving spine line -->
+    <path d="M 230 110 L 160 110 C 140 110 140 130 140 150 L 140 270 C 140 285 140 290 160 290 L 165 290" stroke="url(#lineGradW)" stroke-width="6"/>
+    
+    <!-- Connection right from spine -->
+    <line x1="230" y1="110" x2="250" y2="110" stroke="#3b82f6" stroke-width="6"/>
+    
+    <!-- Dot on spine -->
+    <circle cx="140" cy="155" r="6" fill="#3b82f6" stroke="#3b82f6" stroke-width="2"/>
+    
+    <!-- Top process box -->
+    <rect x="175" y="95" width="45" height="30" rx="8" stroke="#3b82f6" stroke-width="5" fill="none"/>
+    
+    <!-- Middle decision diamond -->
+    <polygon points="177,185 195,167 213,185 195,203" stroke="#3b82f6" stroke-width="5" fill="none"/>
+    
+    <!-- Line from diamond to right box -->
+    <line x1="213" y1="185" x2="238" y2="185" stroke="#3b82f6" stroke-width="5"/>
+    
+    <!-- Right process box -->
+    <rect x="238" y="170" width="42" height="30" rx="8" stroke="#3b82f6" stroke-width="5" fill="none"/>
+    
+    <!-- Vertical line down from diamond -->
+    <line x1="195" y1="203" x2="195" y2="230" stroke="#e2e8f0" stroke-width="5"/>
+    
+    <!-- Lower process box -->
+    <rect x="181" y="230" width="28" height="26" rx="5" stroke="#e2e8f0" stroke-width="5" fill="none"/>
+    
+    <!-- Arrow down from lower box -->
+    <line x1="195" y1="256" x2="195" y2="285" stroke="#e2e8f0" stroke-width="5"/>
+    <path d="M 188 277 L 195 287 L 202 277" stroke="#e2e8f0" stroke-width="5" fill="none"/>
+  </g>
+  
+  <!-- FLOWBOARD Text -->
+  <text x="200" y="340" text-anchor="middle" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-weight="800" font-size="32" letter-spacing="6">
+    <tspan fill="#3b82f6">FLOW</tspan><tspan fill="#ffffff">BOARD</tspan>
+  </text>
+  
+  <!-- Subtitle with side lines -->
+  <g>
+    <line x1="50" y1="362" x2="85" y2="362" stroke="#64748b" stroke-width="1.5"/>
+    <text x="200" y="366" text-anchor="middle" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-weight="600" font-size="10" fill="#94a3b8" letter-spacing="3">
+      PLAN. ALGORITHM. BUILD.
+    </text>
+    <line x1="315" y1="362" x2="350" y2="362" stroke="#64748b" stroke-width="1.5"/>
+  </g>
+</svg>

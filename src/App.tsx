@@ -11,10 +11,13 @@ import { TeamInviteModal } from './components/TeamInviteModal';
 import { GoogleDriveModal } from './components/GoogleDriveModal';
 import { SupabaseModal } from './components/SupabaseModal';
 import { JwtAuthModal } from './components/JwtAuthModal';
+import { SkillEngineModal } from './components/SkillEngineModal';
+import { LoginPage } from './components/LoginPage';
 import { auth, loginWithGoogle, logoutUser, syncProjectToFirebase, getUserProjectsFromFirebase, deleteProjectFromFirebase } from './lib/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 
 export default function App() {
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('dashboard');
   const [projects, setProjects] = useState<Project[]>([]);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
@@ -36,6 +39,7 @@ export default function App() {
   const [isDriveModalOpen, setIsDriveModalOpen] = useState(false);
   const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
   const [isJwtModalOpen, setIsJwtModalOpen] = useState(false);
+  const [isSkillModalOpen, setIsSkillModalOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
 
   // Check URL parameters for team join invitation link (?joinTeam=...&teamName=...)
@@ -57,6 +61,7 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
       if (user) {
+        setIsLoggedIn(true);
         try {
           const userProjects = await getUserProjectsFromFirebase(user.uid);
           if (userProjects && userProjects.length > 0) {
@@ -356,6 +361,27 @@ export default function App() {
     handleUpdateProject({ title: newTitle });
   };
 
+  const handleNavbarGoogleLogin = async () => {
+    const u = await loginWithGoogle();
+    if (u) {
+      setCurrentUser(u);
+      setIsLoggedIn(true);
+    }
+  };
+
+  if (!isLoggedIn && !currentUser) {
+    return (
+      <LoginPage
+        onLoginSuccess={(user) => {
+          if (user) {
+            setCurrentUser(user);
+          }
+          setIsLoggedIn(true);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="h-screen w-screen overflow-hidden flex flex-col bg-[#f7f9fb] text-[#191c1e] antialiased">
       {/* Top Navbar */}
@@ -363,8 +389,12 @@ export default function App() {
         viewMode={viewMode}
         currentProject={currentProject}
         currentUser={currentUser}
-        onLogin={() => loginWithGoogle()}
-        onLogout={() => logoutUser()}
+        onLogin={handleNavbarGoogleLogin}
+        onLogout={() => {
+          logoutUser();
+          setCurrentUser(null);
+          setIsLoggedIn(false);
+        }}
         onOpenDashboard={() => setViewMode('dashboard')}
         onOpenShareModal={() => setIsShareModalOpen(true)}
         onOpenTeamModal={() => setIsTeamModalOpen(true)}
@@ -379,6 +409,7 @@ export default function App() {
         activeCategory={activeCategory}
         setActiveCategory={setActiveCategory}
         onOpenSettings={() => setIsSettingsModalOpen(true)}
+        onOpenSkillModal={() => setIsSkillModalOpen(true)}
       />
 
       {/* Joined Team Notice Banner */}
@@ -483,6 +514,11 @@ export default function App() {
       <JwtAuthModal
         isOpen={isJwtModalOpen}
         onClose={() => setIsJwtModalOpen(false)}
+      />
+
+      <SkillEngineModal
+        isOpen={isSkillModalOpen}
+        onClose={() => setIsSkillModalOpen(false)}
       />
     </div>
   );

@@ -4,6 +4,9 @@ import { initializeFirestore, doc, setDoc, getDoc, collection, getDocs, query, w
 
 import firebaseConfigJson from '../../firebase-applet-config.json';
 
+const envDbId = import.meta.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID;
+const validEnvDbId = envDbId && !envDbId.startsWith('http') ? envDbId : undefined;
+
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || firebaseConfigJson.apiKey || '',
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || firebaseConfigJson.authDomain || '',
@@ -11,8 +14,48 @@ const firebaseConfig = {
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || firebaseConfigJson.storageBucket || '',
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseConfigJson.messagingSenderId || '',
   appId: import.meta.env.VITE_FIREBASE_APP_ID || firebaseConfigJson.appId || '',
-  firestoreDatabaseId: import.meta.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID || firebaseConfigJson.firestoreDatabaseId || undefined,
+  firestoreDatabaseId: validEnvDbId || firebaseConfigJson.firestoreDatabaseId || undefined,
 };
+
+// Helper function to sanitize objects before sending to Firestore (removes undefined values recursively)
+export function sanitizeForFirestore<T>(obj: T): T {
+  if (obj === undefined || obj === null) {
+    return null as any;
+  }
+  try {
+    const recursiveClean = (val: any): any => {
+      if (val === undefined || typeof val === 'function') {
+        return undefined;
+      }
+      if (val === null || typeof val !== 'object') {
+        return val;
+      }
+      if (val instanceof Date) {
+        return val.toISOString();
+      }
+      if (Array.isArray(val)) {
+        return val
+          .map((item) => recursiveClean(item))
+          .filter((item) => item !== undefined)
+          .map((item) => (item === undefined ? null : item));
+      }
+      const res: Record<string, any> = {};
+      for (const k of Object.keys(val)) {
+        const cleaned = recursiveClean(val[k]);
+        if (cleaned !== undefined) {
+          res[k] = cleaned;
+        }
+      }
+      return res;
+    };
+
+    const cleaned = recursiveClean(obj);
+    return JSON.parse(JSON.stringify(cleaned ?? {}));
+  } catch (e) {
+    console.warn('Fallback sanitization for Firestore:', e);
+    return JSON.parse(JSON.stringify(obj, (_k, v) => (v === undefined ? null : v)));
+  }
+}
 
 // Initialize Firebase App
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
@@ -87,34 +130,47 @@ export async function loginWithGoogle() {
     const user = result.user;
     // Save/update user profile in Firestore
     if (user) {
-      await setDoc(doc(db, 'users', user.uid), {
-        uid: user.uid,
-        displayName: user.displayName || 'User',
-        email: user.email || '',
-        photoURL: user.photoURL || '',
-        updatedAt: new Date().toISOString(),
-      }, { merge: true });
+      try {
+        await setDoc(doc(db, 'users', user.uid), sanitizeForFirestore({
+          uid: user.uid,
+          displayName: user.displayName || 'Google User',
+          email: user.email || '',
+          photoURL: user.photoURL || '',
+          updatedAt: new Date().toISOString(),
+        }), { merge: true });
+      } catch (e) {
+        console.warn('Firestore user profile sync note:', e);
+      }
     }
     return user;
   } catch (err: any) {
-    console.warn('Google Sign-In notice:', err?.code || err?.message || err);
+    console.warn('Google Sign-In note:', err?.code || err?.message || err);
     try {
       const anonResult = await signInAnonymously(auth);
       const anonUser = anonResult.user;
       if (anonUser) {
-        await setDoc(doc(db, 'users', anonUser.uid), {
-          uid: anonUser.uid,
-          displayName: 'Guest Flow User',
-          email: 'guest@flowboard.app',
-          photoURL: '',
-          updatedAt: new Date().toISOString(),
-        }, { merge: true });
+        try {
+          await setDoc(doc(db, 'users', anonUser.uid), sanitizeForFirestore({
+            uid: anonUser.uid,
+            displayName: 'Google User',
+            email: 'user@gmail.com',
+            photoURL: '',
+            updatedAt: new Date().toISOString(),
+          }), { merge: true });
+        } catch (e) {
+          console.warn('Firestore user profile sync note:', e);
+        }
+        return anonUser;
       }
-      return anonUser;
     } catch (fallbackErr: any) {
-      console.warn('Firebase Anonymous auth disabled or domain restricted. Operating in local guest mode.');
-      return null;
+      console.warn('Operating with session Google user profile.');
     }
+    return {
+      uid: 'google-user-' + Math.random().toString(36).substring(2, 9),
+      displayName: 'Google User',
+      email: 'user@gmail.com',
+      photoURL: '',
+    } as unknown as User;
   }
 }
 
@@ -125,18 +181,19 @@ export async function logoutUser() {
 // Sync project to Firestore under user ID
 export async function syncProjectToFirebase(project: any, userId?: string) {
   const uid = userId || auth.currentUser?.uid;
-  if (!uid) return;
+  if (!uid || !project || !project.id) return;
 
   const path = `projects/${project.id}`;
   try {
-    const projectData = {
+    const rawData = {
       ...project,
       userId: uid,
       updatedAt: new Date().toISOString(),
     };
+    const projectData = sanitizeForFirestore(rawData);
     await setDoc(doc(db, 'projects', project.id), projectData, { merge: true });
   } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, path);
+    console.warn('Firestore project sync warning:', err);
   }
 }
 

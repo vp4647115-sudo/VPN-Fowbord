@@ -35,6 +35,168 @@ const STROKE_COLORS = [
   '#ffffff',
 ];
 
+// Helper to determine if a color hex is dark for high-contrast text calculation
+const isDarkColor = (colorStr?: string): boolean => {
+  if (!colorStr || colorStr === 'transparent' || colorStr === 'white') return false;
+  const hex = colorStr.replace('#', '').trim().toLowerCase();
+  if (['ffffff', 'f8fafc', 'f1f5f9', 'e0f2fe', 'dcfce7', 'fef3c7', 'f3e8ff', 'ffdbcd', 'fef08a', 'bbf7d0', 'fed7aa'].includes(hex)) {
+    return false;
+  }
+  if (['000000', '0a0a0c', '121215', '1e293b', '0f172a', '2563eb', '004ac6', '18181b', '1e1e24', '000'].includes(hex)) {
+    return true;
+  }
+  if (hex.length === 6) {
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    return luminance < 0.55;
+  }
+  return false;
+};
+
+// Sanitizes AI-generated node colors to enforce theme directives and high contrast
+const sanitizeAiNodeColor = (rawColor: string | undefined, nodeType: string): { bg: string; border: string } => {
+  const norm = (rawColor || '').trim().toLowerCase();
+  if (!rawColor || norm === '#000' || norm === '#000000' || norm === '#0a0a0c' || norm === '#121215' || norm === '#18181b') {
+    if (nodeType === 'database') return { bg: '#fff7ed', border: '#ea580c' };
+    if (nodeType === 'api-gateway') return { bg: '#ffffff', border: '#2563eb' };
+    if (nodeType === 'credentials') return { bg: '#ffffff', border: '#16a34a' };
+    if (nodeType === 'sticky') return { bg: '#fef3c7', border: '#d97706' };
+    if (nodeType === 'star') return { bg: '#fef3c7', border: '#d97706' };
+    if (nodeType === 'cloud') return { bg: '#e0f2fe', border: '#0284c7' };
+    if (nodeType === 'oval' || nodeType === 'circle') return { bg: '#f3e8ff', border: '#9333ea' };
+    return { bg: '#ffffff', border: '#004ac6' };
+  }
+  return { bg: rawColor, border: '#004ac6' };
+};
+
+// Helper to convert font size setting into pixel number
+const getFontPx = (fontSize?: string | number): number => {
+  if (typeof fontSize === 'number') return fontSize;
+  if (!fontSize) return 14;
+  if (fontSize === 'xs') return 11;
+  if (fontSize === 'sm') return 12;
+  if (fontSize === 'base' || fontSize === 'md') return 14;
+  if (fontSize === 'lg') return 16;
+  if (fontSize === 'xl') return 18;
+  if (fontSize === '2xl') return 22;
+  const parsed = parseInt(fontSize, 10);
+  return isNaN(parsed) ? 14 : parsed;
+};
+
+// Calculates optimal shape dimensions and text bounds to ensure text NEVER overflows or leaks out of shapes
+const computeNodeBounds = (node: CanvasNode): { w: number; h: number; titleFontPx: number; subFontPx: number } => {
+  const titleText = node.title || '';
+  const subText = node.subtitle || '';
+
+  const baseTitleFont = getFontPx(node.fontSize);
+  const baseSubFont = Math.max(10, Math.round(baseTitleFont * 0.72));
+
+  // Determine estimated text line requirements
+  const titleWords = titleText.split(/\s+/).filter(Boolean);
+  const subWords = subText.split(/\s+/).filter(Boolean);
+
+  const maxTitleWordLength = titleWords.length > 0 ? Math.max(...titleWords.map(w => w.length)) : 0;
+  const maxSubWordLength = subWords.length > 0 ? Math.max(...subWords.map(w => w.length)) : 0;
+  const maxWordLen = Math.max(maxTitleWordLength, maxSubWordLength);
+
+  // Minimum required inner width for max single word
+  const minWordWidth = Math.max(65, maxWordLen * baseTitleFont * 0.65);
+
+  // Estimated text block dimensions at ideal line wrapping
+  const approxTitleLines = Math.max(1, Math.ceil(titleText.length / 16));
+  const approxSubLines = subText ? Math.max(1, Math.ceil(subText.length / 20)) : 0;
+
+  const rawTextWidth = Math.max(
+    minWordWidth,
+    Math.min(280, Math.max(titleText.length * baseTitleFont * 0.52, subText.length * baseSubFont * 0.52))
+  );
+  const rawTextHeight = (approxTitleLines * baseTitleFont * 1.25) + (approxSubLines * baseSubFont * 1.25) + 12;
+
+  // Geometry expansion factors for each shape so text stays 100% inside the geometric boundary
+  let expansionW = 1.25;
+  let expansionH = 1.35;
+  let minDefaultW = 180;
+  let minDefaultH = 85;
+
+  switch (node.type) {
+    case 'circle':
+    case 'oval':
+      expansionW = 1.55;
+      expansionH = 1.55;
+      minDefaultW = 145;
+      minDefaultH = 135;
+      break;
+    case 'diamond':
+      expansionW = 1.95;
+      expansionH = 2.0;
+      minDefaultW = 195;
+      minDefaultH = 115;
+      break;
+    case 'star':
+      expansionW = 2.25;
+      expansionH = 2.25;
+      minDefaultW = 195;
+      minDefaultH = 195;
+      break;
+    case 'triangle':
+      expansionW = 1.85;
+      expansionH = 2.0;
+      minDefaultW = 185;
+      minDefaultH = 135;
+      break;
+    case 'cloud':
+      expansionW = 1.6;
+      expansionH = 1.6;
+      minDefaultW = 190;
+      minDefaultH = 115;
+      break;
+    case 'database':
+      expansionW = 1.35;
+      expansionH = 1.55;
+      minDefaultW = 180;
+      minDefaultH = 105;
+      break;
+    case 'table':
+      minDefaultW = 240;
+      minDefaultH = 180;
+      break;
+    case 'api-gateway':
+    case 'credentials':
+      minDefaultW = 200;
+      minDefaultH = 95;
+      break;
+    default:
+      minDefaultW = 180;
+      minDefaultH = 85;
+      break;
+  }
+
+  const calculatedW = Math.ceil(Math.max(minDefaultW, rawTextWidth * expansionW));
+  const calculatedH = Math.ceil(Math.max(minDefaultH, rawTextHeight * expansionH));
+
+  // Use user-provided width/height if present, but guarantee it never shrinks below the calculated safe bounds for text
+  const finalW = node.width ? Math.max(node.width, calculatedW) : calculatedW;
+  const finalH = node.height ? Math.max(node.height, calculatedH) : calculatedH;
+
+  // Auto-adjust font size down if node height/width is tight
+  let finalTitleFont = baseTitleFont;
+  let finalSubFont = baseSubFont;
+
+  if (finalW < rawTextWidth * expansionW * 0.85 || finalH < rawTextHeight * expansionH * 0.85) {
+    finalTitleFont = Math.max(11, Math.round(baseTitleFont * 0.85));
+    finalSubFont = Math.max(9, Math.round(baseSubFont * 0.85));
+  }
+
+  return {
+    w: finalW,
+    h: finalH,
+    titleFontPx: finalTitleFont,
+    subFontPx: finalSubFont,
+  };
+};
+
 export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   project,
   onUpdateProject,
@@ -84,23 +246,26 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
         const existingMaxX = project.nodes.length > 0 ? Math.max(...project.nodes.map((n) => n.x + (n.width || 180))) : 100;
         const startX = project.nodes.length > 0 ? existingMaxX + 150 : 200;
 
-        const createdNodes: CanvasNode[] = (newNodes || []).map((n: any, idx: number) => ({
-          id: n.id || `ai-node-${Date.now()}-${idx}`,
-          type: (n.type as NodeType) || 'rectangle',
-          title: n.title || 'AI Service',
-          subtitle: n.subtitle || '',
-          x: (n.x || 200) + (project.nodes.length > 0 ? startX - 200 : 0),
-          y: (n.y || 150),
-          color: n.color || '#ffffff',
-          borderColor: n.borderColor || '#004ac6',
-          width: n.type === 'table' ? 240 : 190,
-          height: n.type === 'table' ? 200 : 85,
-          columns: n.columns || (n.type === 'table' ? [
-            { name: 'id', type: 'UUID', isPk: true },
-            { name: 'name', type: 'VARCHAR(100)' },
-            { name: 'created_at', type: 'TIMESTAMP' }
-          ] : undefined),
-        }));
+        const createdNodes: CanvasNode[] = (newNodes || []).map((n: any, idx: number) => {
+          const sanitized = sanitizeAiNodeColor(n.color, n.type);
+          return {
+            id: n.id || `ai-node-${Date.now()}-${idx}`,
+            type: (n.type as NodeType) || 'rectangle',
+            title: n.title || 'AI Service',
+            subtitle: n.subtitle || '',
+            x: (n.x || 200) + (project.nodes.length > 0 ? startX - 200 : 0),
+            y: (n.y || 150),
+            color: sanitized.bg,
+            borderColor: n.borderColor && n.borderColor !== '#000000' && n.borderColor !== '#0a0a0c' ? n.borderColor : sanitized.border,
+            width: n.type === 'table' ? 240 : 190,
+            height: n.type === 'table' ? 200 : 85,
+            columns: n.columns || (n.type === 'table' ? [
+              { name: 'id', type: 'UUID', isPk: true },
+              { name: 'name', type: 'VARCHAR(100)' },
+              { name: 'created_at', type: 'TIMESTAMP' }
+            ] : undefined),
+          };
+        });
 
         const createdConnectors: Connector[] = (newConnectors || []).map((c: any, idx: number) => ({
           id: c.id || `ai-conn-${Date.now()}-${idx}`,
@@ -312,32 +477,69 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
     }
   }, [activeTool]);
 
-  // Wheel Zoom / Pan Event Handler
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    if (e.ctrlKey || e.metaKey) {
-      // Zoom centered on mouse
-      const zoomFactor = e.deltaY < 0 ? 1.08 : 0.92;
-      const newZoom = Math.min(Math.max(0.2, zoom * zoomFactor), 4);
+  // Multi-touch Pinch-Zoom Ref
+  const touchPinchRef = useRef<{
+    initialDist: number;
+    initialZoom: number;
+    initialPan: Point;
+    center: Point;
+  } | null>(null);
 
-      const mousePos = screenToCanvasCoords(e.clientX, e.clientY);
-      const newPanX = e.clientX - (containerRef.current?.getBoundingClientRect().left || 0) - mousePos.x * newZoom;
-      const newPanY = e.clientY - (containerRef.current?.getBoundingClientRect().top || 0) - mousePos.y * newZoom;
+  // Wheel Zoom / Pan Event Handler with non-passive event listener
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
 
-      setZoom(newZoom);
-      setPan({ x: newPanX, y: newPanY });
-    } else {
-      // Scroll to Pan
-      setPan((prev) => ({
-        x: prev.x - e.deltaX,
-        y: prev.y - e.deltaY,
-      }));
-    }
-  };
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      if (e.ctrlKey || e.metaKey) {
+        // Zoom centered on mouse cursor
+        const zoomFactor = e.deltaY < 0 ? 1.08 : 0.92;
+        setZoom((prevZoom) => {
+          const newZoom = Math.min(Math.max(0.2, prevZoom * zoomFactor), 4);
+          const rect = container.getBoundingClientRect();
+          const mousePos = {
+            x: (e.clientX - rect.left - pan.x) / prevZoom,
+            y: (e.clientY - rect.top - pan.y) / prevZoom,
+          };
+          const newPanX = e.clientX - rect.left - mousePos.x * newZoom;
+          const newPanY = e.clientY - rect.top - mousePos.y * newZoom;
+          setPan({ x: newPanX, y: newPanY });
+          return newZoom;
+        });
+      } else {
+        // Scroll to Pan
+        setPan((prev) => ({
+          x: prev.x - e.deltaX,
+          y: prev.y - e.deltaY,
+        }));
+      }
+    };
 
-  // Touch Handlers for Mobile / Tablet Support
+    container.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      container.removeEventListener('wheel', onWheel);
+    };
+  }, [pan, zoom]);
+
+  // Touch Handlers for Mobile / Tablet Support (Single Finger & Multi-Touch Pinch/Pan)
   const handleTouchStart = (e: React.TouchEvent) => {
-    if (e.touches.length === 1) {
+    if (e.touches.length === 2) {
+      const t1 = e.touches[0];
+      const t2 = e.touches[1];
+      const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+      const center = {
+        x: (t1.clientX + t2.clientX) / 2,
+        y: (t1.clientY + t2.clientY) / 2,
+      };
+      touchPinchRef.current = {
+        initialDist: dist,
+        initialZoom: zoom,
+        initialPan: { ...pan },
+        center,
+      };
+    } else if (e.touches.length === 1) {
+      touchPinchRef.current = null;
       const touch = e.touches[0];
       const mouseEvt = {
         clientX: touch.clientX,
@@ -353,7 +555,35 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (e.touches.length === 1) {
+    if (e.touches.length === 2 && touchPinchRef.current) {
+      e.preventDefault();
+      const t1 = e.touches[0];
+      const t2 = e.touches[1];
+      const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+      const center = {
+        x: (t1.clientX + t2.clientX) / 2,
+        y: (t1.clientY + t2.clientY) / 2,
+      };
+      const { initialDist, initialZoom, initialPan, center: initCenter } = touchPinchRef.current;
+      if (initialDist > 0) {
+        const scale = dist / initialDist;
+        const newZoom = Math.min(Math.max(0.2, initialZoom * scale), 4);
+        const dx = center.x - initCenter.x;
+        const dy = center.y - initCenter.y;
+
+        if (containerRef.current) {
+          const rect = containerRef.current.getBoundingClientRect();
+          const canvasPt = {
+            x: (initCenter.x - rect.left - initialPan.x) / initialZoom,
+            y: (initCenter.y - rect.top - initialPan.y) / initialZoom,
+          };
+          const newPanX = initCenter.x - rect.left - canvasPt.x * newZoom + dx;
+          const newPanY = initCenter.y - rect.top - canvasPt.y * newZoom + dy;
+          setZoom(newZoom);
+          setPan({ x: newPanX, y: newPanY });
+        }
+      }
+    } else if (e.touches.length === 1) {
       const touch = e.touches[0];
       const mouseEvt = {
         clientX: touch.clientX,
@@ -368,6 +598,9 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
+    if (e.touches.length < 2) {
+      touchPinchRef.current = null;
+    }
     handleCanvasMouseUp();
   };
 
@@ -877,7 +1110,6 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
     <div
       ref={containerRef}
       id="board-canvas"
-      onWheel={handleWheel}
       onMouseDown={handleCanvasMouseDown}
       onMouseMove={handleCanvasMouseMove}
       onMouseUp={handleCanvasMouseUp}
@@ -885,7 +1117,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
-      className={`absolute inset-0 ${
+      className={`absolute inset-0 touch-none ${
         gridStyle === 'line' ? 'canvas-bg-lines' : gridStyle === 'blank' ? 'canvas-bg-blank' : 'canvas-bg'
       } z-0 overflow-hidden select-none pt-16 ${
         activeTool === 'pan' || isSpacePressed
@@ -1154,10 +1386,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
           }
 
           // Render Shape Nodes with distinct vector geometries and rich components
-          const titleFontPx = getFontPx(node.fontSize);
-          const subFontPx = Math.max(10, Math.round(titleFontPx * 0.7));
-          const w = node.width || (node.type === 'table' ? 220 : node.type === 'circle' || node.type === 'oval' ? 130 : 180);
-          const h = node.height || (node.type === 'table' ? 170 : node.type === 'circle' || node.type === 'oval' ? 130 : 80);
+          const { w, h, titleFontPx, subFontPx } = computeNodeBounds(node);
           const fillColor = node.color || '#ffffff';
           const strokeColor = node.borderColor || '#004ac6';
           const strokeWidth = node.strokeWidth !== undefined ? node.strokeWidth : 2;
@@ -1209,7 +1438,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                       strokeWidth={1.5}
                     />
                   </svg>
-                  <div className="relative z-10 flex flex-col items-center justify-center px-2 py-1">
+                  <div className="relative z-10 flex flex-col items-center justify-center px-2 py-1 max-w-[80%] text-center">
                     <span className="material-symbols-outlined text-xl mb-0.5 text-[#004ac6]">
                       database
                     </span>
@@ -1218,16 +1447,16 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                         fontSize: `${titleFontPx}px`,
                         fontWeight: node.fontWeight || 'bold',
                         lineHeight: 1.2,
-                        color: fillColor === '#1e293b' || fillColor === '#2563eb' ? '#ffffff' : '#191c1e',
+                        color: isDarkColor(fillColor) ? '#ffffff' : '#191c1e',
                       }}
-                      className="truncate max-w-[160px]"
+                      className="break-words w-full text-center font-bold"
                     >
                       {node.title}
                     </div>
                     {node.subtitle && (
                       <div
                         style={{ fontSize: `${subFontPx}px` }}
-                        className="opacity-80 truncate max-w-[160px] text-slate-600 mt-0.5"
+                        className={`opacity-80 break-words w-full text-center mt-0.5 ${isDarkColor(fillColor) ? 'text-slate-200' : 'text-slate-600'}`}
                       >
                         {node.subtitle}
                       </div>
@@ -1269,22 +1498,22 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                       strokeDasharray={node.strokeStyle === 'dashed' ? '4 4' : undefined}
                     />
                   </svg>
-                  <div className="relative z-10 flex flex-col items-center justify-center p-2 max-w-[80%]">
+                  <div className="relative z-10 flex flex-col items-center justify-center p-1 max-w-[52%] max-h-[60%] overflow-hidden text-center">
                     <div
                       style={{
                         fontSize: `${titleFontPx}px`,
                         fontWeight: node.fontWeight || 'bold',
                         lineHeight: 1.2,
-                        color: fillColor === '#1e293b' || fillColor === '#2563eb' ? '#ffffff' : '#191c1e',
+                        color: isDarkColor(fillColor) ? '#ffffff' : '#191c1e',
                       }}
-                      className="text-center"
+                      className="break-words w-full text-center font-bold"
                     >
                       {node.title}
                     </div>
                     {node.subtitle && (
                       <div
                         style={{ fontSize: `${subFontPx}px` }}
-                        className="opacity-80 text-center text-slate-700 mt-0.5"
+                        className={`opacity-80 break-words w-full text-center mt-0.5 ${isDarkColor(fillColor) ? 'text-slate-200' : 'text-slate-700'}`}
                       >
                         {node.subtitle}
                       </div>
@@ -1326,22 +1555,22 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                       strokeDasharray={node.strokeStyle === 'dashed' ? '4 4' : undefined}
                     />
                   </svg>
-                  <div className="relative z-10 flex flex-col items-center justify-center max-w-[80%] mb-1">
+                  <div className="relative z-10 flex flex-col items-center justify-center max-w-[55%] mb-1 text-center">
                     <div
                       style={{
                         fontSize: `${titleFontPx}px`,
                         fontWeight: node.fontWeight || 'bold',
                         lineHeight: 1.2,
-                        color: fillColor === '#1e293b' || fillColor === '#2563eb' ? '#ffffff' : '#191c1e',
+                        color: isDarkColor(fillColor) ? '#ffffff' : '#191c1e',
                       }}
-                      className="text-center"
+                      className="break-words w-full text-center font-bold"
                     >
                       {node.title}
                     </div>
                     {node.subtitle && (
                       <div
                         style={{ fontSize: `${subFontPx}px` }}
-                        className="opacity-80 text-center text-slate-600 mt-0.5"
+                        className={`opacity-80 break-words w-full text-center mt-0.5 ${isDarkColor(fillColor) ? 'text-slate-200' : 'text-slate-600'}`}
                       >
                         {node.subtitle}
                       </div>
@@ -1382,7 +1611,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                       strokeWidth={strokeWidth}
                     />
                   </svg>
-                  <div className="relative z-10 flex flex-col items-center justify-center max-w-[65%]">
+                  <div className="relative z-10 flex flex-col items-center justify-center max-w-[45%] max-h-[50%] overflow-hidden text-center">
                     <div
                       style={{
                         fontSize: `${titleFontPx}px`,
@@ -1390,14 +1619,14 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                         lineHeight: 1.2,
                         color: '#78350f',
                       }}
-                      className="text-center"
+                      className="break-words w-full text-center font-bold"
                     >
                       {node.title}
                     </div>
                     {node.subtitle && (
                       <div
                         style={{ fontSize: `${subFontPx}px` }}
-                        className="opacity-80 text-center text-amber-900 mt-0.5"
+                        className="opacity-80 break-words w-full text-center text-amber-900 mt-0.5"
                       >
                         {node.subtitle}
                       </div>
@@ -1443,7 +1672,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                       strokeWidth={strokeWidth}
                     />
                   </svg>
-                  <div className="relative z-10 flex flex-col items-center justify-center px-4 py-1">
+                  <div className="relative z-10 flex flex-col items-center justify-center px-3 py-1 max-w-[65%] text-center">
                     <span className="material-symbols-outlined text-lg mb-0.5 text-sky-600">
                       cloud_queue
                     </span>
@@ -1452,14 +1681,14 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                         fontSize: `${titleFontPx}px`,
                         fontWeight: node.fontWeight || 'bold',
                         lineHeight: 1.2,
-                        color: '#0369a1',
+                        color: isDarkColor(fillColor) ? '#ffffff' : '#0369a1',
                       }}
-                      className="text-center"
+                      className="break-words w-full text-center font-bold"
                     >
                       {node.title}
                     </div>
                     {node.subtitle && (
-                      <div style={{ fontSize: `${subFontPx}px` }} className="opacity-80 text-sky-800 mt-0.5">
+                      <div style={{ fontSize: `${subFontPx}px` }} className={`opacity-80 break-words w-full text-center mt-0.5 ${isDarkColor(fillColor) ? 'text-sky-100' : 'text-sky-800'}`}>
                         {node.subtitle}
                       </div>
                     )}
@@ -1649,8 +1878,8 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                   <div className="absolute top-0 right-0 w-5 h-5 bg-black/10 border-b border-l border-black/20 rounded-bl-md pointer-events-none"></div>
 
                   <div>
-                    <div style={{ fontSize: `${titleFontPx}px` }} className="font-bold text-amber-950 leading-snug">{node.title}</div>
-                    {node.subtitle && <div style={{ fontSize: `${subFontPx}px` }} className="text-amber-900/80 mt-1">{node.subtitle}</div>}
+                    <div style={{ fontSize: `${titleFontPx}px` }} className="font-bold text-amber-950 leading-snug break-words">{node.title}</div>
+                    {node.subtitle && <div style={{ fontSize: `${subFontPx}px` }} className="text-amber-900/80 mt-1 break-words">{node.subtitle}</div>}
                   </div>
 
                   <button
@@ -1685,8 +1914,10 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                     isSelected ? 'ring-2 ring-[#004ac6] ring-offset-2 shadow-xl' : ''
                   } ${isConnectingFrom ? 'ring-2 ring-emerald-500 animate-pulse' : ''}`}
                 >
-                  <div style={{ fontSize: `${titleFontPx}px` }} className="font-bold text-slate-900 leading-tight max-w-[90%] truncate">{node.title}</div>
-                  {node.subtitle && <div style={{ fontSize: `${subFontPx}px` }} className="text-slate-600 mt-0.5 max-w-[90%] truncate">{node.subtitle}</div>}
+                  <div className="relative z-10 flex flex-col items-center justify-center max-w-[72%] max-h-[75%] px-2 text-center">
+                    <div style={{ fontSize: `${titleFontPx}px`, color: isDarkColor(fillColor) ? '#ffffff' : '#0f172a' }} className="font-bold leading-tight break-words w-full text-center">{node.title}</div>
+                    {node.subtitle && <div style={{ fontSize: `${subFontPx}px`, color: isDarkColor(fillColor) ? '#e2e8f0' : '#475569' }} className="mt-0.5 break-words w-full opacity-80 text-center">{node.subtitle}</div>}
+                  </div>
 
                   <button
                     onClick={(e) => handleStartConnection(e, node.id)}
@@ -1708,8 +1939,8 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                   style={{
                     left: `${node.x}px`,
                     top: `${node.y}px`,
-                    width: node.width ? `${node.width}px` : isTextNode ? 'auto' : '180px',
-                    minHeight: node.height ? `${node.height}px` : isTextNode ? 'auto' : '80px',
+                    width: isTextNode ? (node.width ? `${node.width}px` : 'auto') : `${w}px`,
+                    minHeight: isTextNode ? (node.height ? `${node.height}px` : 'auto') : `${h}px`,
                     backgroundColor: fillColor || (isTextNode ? 'transparent' : '#ffffff'),
                     borderColor: strokeColor || (isTextNode ? 'transparent' : '#004ac6'),
                     borderWidth: `${strokeWidth !== undefined ? strokeWidth : isTextNode ? 0 : 2}px`,
@@ -1740,17 +1971,18 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                         fontSize: `${titleFontPx}px`,
                         fontWeight: node.fontWeight || 'bold',
                         lineHeight: 1.25,
-                        color: fillColor === '#1e293b' || fillColor === '#2563eb' ? '#ffffff' : '#191c1e',
+                        color: isDarkColor(fillColor) ? '#ffffff' : '#191c1e',
                       }}
+                      className="break-words font-bold"
                     >
                       {node.title}
                     </div>
                     {node.subtitle && (
                       <div
-                        className="mt-0.5 opacity-80"
+                        className="mt-0.5 opacity-80 break-words"
                         style={{
                           fontSize: `${subFontPx}px`,
-                          color: fillColor === '#1e293b' || fillColor === '#2563eb' ? '#e2e8f0' : '#434655',
+                          color: isDarkColor(fillColor) ? '#e2e8f0' : '#434655',
                         }}
                       >
                         {node.subtitle}
