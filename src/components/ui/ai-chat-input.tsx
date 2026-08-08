@@ -432,104 +432,105 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
           stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         }
       } catch (err) {
-        console.warn("Microphone access denied or unavailable. Falling back to simulated voice mode.");
+        console.warn("Microphone access for audio visualizer notice:", err);
       }
 
       setIsRecording(true);
 
-      function simulateText() {
-        const fakeText = "Generate a full user auth & payment flow with table schema";
-        const words = fakeText.split(" ");
-        let i = 0;
-        let currentBase = valueRef.current;
-        demoTextIntervalRef.current = window.setInterval(() => {
-          if (i < words.length) {
-            currentBase = (currentBase ? currentBase + " " : "") + words[i];
-            handleValueChange(currentBase);
-            i++;
-          } else {
-            stopRecording();
-          }
-        }, 300);
-      }
-
       if (stream) {
         streamRef.current = stream;
-        
         const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-        const audioCtx = new AudioCtx();
-        audioContextRef.current = audioCtx;
+        if (AudioCtx) {
+          try {
+            const audioCtx = new AudioCtx();
+            audioContextRef.current = audioCtx;
 
-        const analyser = audioCtx.createAnalyser();
-        analyser.fftSize = 64; 
-        const source = audioCtx.createMediaStreamSource(stream);
-        source.connect(analyser);
+            const analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 64; 
+            const source = audioCtx.createMediaStreamSource(stream);
+            source.connect(analyser);
 
-        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
 
-        const updateVisualizer = () => {
-          analyser.getByteFrequencyData(dataArray);
-          const bands = new Array(5).fill(0);
-          const step = Math.floor(dataArray.length / 5);
-          for (let i = 0; i < 5; i++) {
-            let sum = 0;
-            for (let j = 0; j < step; j++) {
-              sum += dataArray[i * step + j];
-            }
-            bands[i] = sum / step / 255;
-          }
-          setAudioData(bands);
-          rafRef.current = requestAnimationFrame(updateVisualizer);
-        };
-        updateVisualizer();
-
-        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-        if (SpeechRecognition) {
-          const recognition = new SpeechRecognition();
-          recognition.continuous = true;
-          recognition.interimResults = true;
-
-          let baseline = valueRef.current;
-
-          recognition.onresult = (event: any) => {
-            let interimTranscript = "";
-            let finalTranscript = "";
-
-            for (let i = event.resultIndex; i < event.results.length; ++i) {
-              if (event.results[i].isFinal) {
-                finalTranscript += event.results[i][0].transcript;
-              } else {
-                interimTranscript += event.results[i][0].transcript;
+            const updateVisualizer = () => {
+              analyser.getByteFrequencyData(dataArray);
+              const bands = new Array(5).fill(0);
+              const step = Math.floor(dataArray.length / 5);
+              for (let i = 0; i < 5; i++) {
+                let sum = 0;
+                for (let j = 0; j < step; j++) {
+                  sum += dataArray[i * step + j];
+                }
+                bands[i] = sum / step / 255;
               }
-            }
-            
-            if (finalTranscript) {
-               baseline += (baseline ? " " : "") + finalTranscript;
-            }
-            
-            handleValueChange((baseline + (interimTranscript ? " " + interimTranscript : "")).trim());
-          };
-
-          recognition.onerror = () => {
-            stopRecording();
-          };
-
-          recognition.onend = () => {
-             stopRecording();
-          };
-
-          recognitionRef.current = recognition;
-          recognition.start();
-        } else {
-          simulateText();
+              setAudioData(bands);
+              rafRef.current = requestAnimationFrame(updateVisualizer);
+            };
+            updateVisualizer();
+          } catch (e) {
+            console.warn("AudioContext setup notice:", e);
+          }
         }
       } else {
         demoIntervalRef.current = window.setInterval(() => {
           setAudioData(Array.from({ length: 5 }, () => Math.random() * 0.8 + 0.1));
-        }, 100);
-        simulateText();
+        }, 120);
       }
-    }, [handleValueChange, stopRecording]);
+
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        try {
+          const recognition = new SpeechRecognition();
+          recognition.continuous = true;
+          recognition.interimResults = true;
+          recognition.lang = navigator.language || "en-US";
+
+          const initialBase = valueRef.current;
+
+          recognition.onresult = (event: any) => {
+            let finalTranscript = "";
+            let interimTranscript = "";
+
+            for (let i = 0; i < event.results.length; ++i) {
+              const res = event.results[i];
+              if (res.isFinal) {
+                finalTranscript += res[0].transcript;
+              } else {
+                interimTranscript += res[0].transcript;
+              }
+            }
+
+            const fullText = (initialBase ? initialBase + " " : "") + finalTranscript + (interimTranscript ? " " + interimTranscript : "");
+            handleValueChange(fullText.replace(/\s+/g, " ").trimStart());
+          };
+
+          recognition.onerror = (event: any) => {
+            console.warn("Speech recognition notice:", event?.error);
+            if (event?.error !== "no-speech") {
+              // Keep active recording state unless fatal
+            }
+          };
+
+          recognition.onend = () => {
+            // Restart recognition if user hasn't stopped recording
+            if (recognitionRef.current) {
+              try {
+                recognition.start();
+              } catch (e) {
+                // Ignore if already active or stopped
+              }
+            }
+          };
+
+          recognitionRef.current = recognition;
+          recognition.start();
+        } catch (err) {
+          console.error("SpeechRecognition launch error:", err);
+        }
+      } else {
+        console.warn("Web Speech API SpeechRecognition is not supported in this browser environment.");
+      }
+    }, [handleValueChange]);
 
     useEffect(() => {
       if (isRecording && textareaRef.current) {

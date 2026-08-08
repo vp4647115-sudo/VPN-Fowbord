@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { getApiUrl } from '../lib/api';
 
 interface SupabaseModalProps {
   isOpen: boolean;
@@ -17,7 +18,7 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({ isOpen, onClose })
   const fetchStatus = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/supabase/status');
+      const res = await fetch(getApiUrl('/api/supabase/status'));
       if (!res.ok) return;
       const contentType = res.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) return;
@@ -50,7 +51,7 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({ isOpen, onClose })
 
     try {
       setLoading(true);
-      const res = await fetch('/api/supabase/credentials', {
+      const res = await fetch(getApiUrl('/api/supabase/credentials'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ supabaseUrl, supabaseKey }),

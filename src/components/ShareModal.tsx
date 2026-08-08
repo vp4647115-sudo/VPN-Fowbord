@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { getApiUrl } from '../lib/api';
 
 interface ShareModalProps {
   isOpen: boolean;
@@ -35,7 +36,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
     const targetEmail = emailInput.trim();
 
     try {
-      const res = await fetch('/api/team/invite', {
+      const res = await fetch(getApiUrl('/api/team/invite'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { getApiUrl } from './api';
 
 // Read Supabase environment variables or use fallback endpoints
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://demo-flowboard.supabase.co';
@@ -28,17 +29,21 @@ export async function signUpUser(email: string, password: string, fullName?: str
 
   try {
     // Call server signup endpoint first for guaranteed handling
-    const res = await fetch('/api/auth/signup', {
+    const res = await fetch(getApiUrl('/api/auth/signup'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: email.trim(), password, fullName }),
     });
 
-    if (res.ok) {
-      const data = await res.json();
-      return data;
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'Account creation failed');
     }
-  } catch (err) {
+    return data;
+  } catch (err: any) {
+    if (err.message && !err.message.includes('fetch')) {
+      throw err;
+    }
     console.warn('Server signup API fallback, using Supabase client:', err);
   }
 
@@ -76,7 +81,7 @@ export async function signInUser(email: string, password: string) {
   }
 
   try {
-    const res = await fetch('/api/auth/login', {
+    const res = await fetch(getApiUrl('/api/auth/login'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: email.trim(), password }),
@@ -119,7 +124,7 @@ export async function signInUser(email: string, password: string) {
 // Verify Email Code / OTP
 export async function verifyEmailCode(email: string, code: string) {
   try {
-    const res = await fetch('/api/auth/verify', {
+    const res = await fetch(getApiUrl('/api/auth/verify'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: email.trim(), code: code.trim() }),
@@ -152,7 +157,7 @@ export async function verifyEmailCode(email: string, code: string) {
 // Google Sign In via Supabase / Server
 export async function signInWithGoogleSupabase() {
   try {
-    const res = await fetch('/api/auth/google', {
+    const res = await fetch(getApiUrl('/api/auth/google'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     });

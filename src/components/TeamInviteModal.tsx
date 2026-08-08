@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { User } from 'firebase/auth';
+import { getApiUrl } from '../lib/api';
 
 interface TeamInviteModalProps {
   isOpen: boolean;
@@ -75,7 +76,7 @@ export const TeamInviteModal: React.FC<TeamInviteModalProps> = ({
     setSendingInvite(true);
 
     try {
-      const res = await fetch('/api/team/invite', {
+      const res = await fetch(getApiUrl('/api/team/invite'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

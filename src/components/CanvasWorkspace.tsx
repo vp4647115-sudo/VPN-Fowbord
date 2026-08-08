@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { CanvasNode, Connector, CommentItem, Project, Point, NodeType } from '../types';
 import { exportProjectToPng, exportProjectToSvg, exportProjectToJson } from '../lib/exportUtils';
 import { PromptInput } from './ui/ai-chat-input';
+import { getApiUrl } from '../lib/api';
 
 interface CanvasWorkspaceProps {
   project: Project;
@@ -226,7 +227,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
     setAiNotice(`Generating diagram with ${meta.model}...`);
 
     try {
-      const res = await fetch('/api/ai/generate-diagram', {
+      const res = await fetch(getApiUrl('/api/ai/generate-diagram'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

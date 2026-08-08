@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { getApiUrl } from '../lib/api';
 
 interface JwtAuthModalProps {
   isOpen: boolean;
@@ -35,7 +36,7 @@ export const JwtAuthModal: React.FC<JwtAuthModalProps> = ({ isOpen, onClose }) =
     setVerifyResult(null);
 
     try {
-      const res = await fetch('/api/auth/jwt/issue', {
+      const res = await fetch(getApiUrl('/api/auth/jwt/issue'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, provider, role, apiKey }),
@@ -62,7 +63,7 @@ export const JwtAuthModal: React.FC<JwtAuthModalProps> = ({ isOpen, onClose }) =
 
     setVerifying(true);
     try {
-      const res = await fetch('/api/auth/jwt/verify', {
+      const res = await fetch(getApiUrl('/api/auth/jwt/verify'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -100,7 +101,7 @@ export const JwtAuthModal: React.FC<JwtAuthModalProps> = ({ isOpen, onClose }) =
     }
 
     try {
-      const res = await fetch('/api/supabase/dynamic-worker', {
+      const res = await fetch(getApiUrl('/api/supabase/dynamic-worker'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

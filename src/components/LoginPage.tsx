@@ -4,6 +4,7 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { loginWithGoogle } from '@/lib/firebase'
 import { signUpUser, signInUser, verifyEmailCode, isValidEmail, signInWithGoogleSupabase } from '@/lib/supabase'
+import { getApiUrl } from '@/lib/api'
 
 interface LoginPageProps {
   onLoginSuccess: (user?: any) => void;
@@ -75,11 +76,13 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
           if (res.verificationCode) setVerificationCode(res.verificationCode)
           setMessage(res.message || `Account created for ${cleanEmail}! Please enter the 6-digit confirmation code sent to your email.`)
         } else if (res.user) {
-          onLoginSuccess({
-            uid: res.user.id || res.user.uid,
+          const loggedUser = {
+            uid: res.user.id || res.user.uid || 'usr-' + Date.now(),
             email: cleanEmail,
             displayName: fullName || cleanEmail.split('@')[0],
-          })
+          }
+          localStorage.setItem('flowboard_user', JSON.stringify(loggedUser))
+          onLoginSuccess(loggedUser)
         }
       } else {
         // --- SUPABASE LOG IN ---
@@ -88,13 +91,16 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
           setIsVerifying(true)
           setMessage(`Please verify your email address to complete sign in. Enter the code sent to your email.`)
         } else if (res.user) {
+          localStorage.setItem('flowboard_user', JSON.stringify(res.user))
           onLoginSuccess(res.user)
         } else {
-          onLoginSuccess({
+          const loggedUser = {
             uid: 'supa-' + Date.now(),
             email: cleanEmail,
             displayName: cleanEmail.split('@')[0],
-          })
+          }
+          localStorage.setItem('flowboard_user', JSON.stringify(loggedUser))
+          onLoginSuccess(loggedUser)
         }
       }
     } catch (err: any) {
@@ -121,6 +127,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
       const res = await verifyEmailCode(email, verificationCode)
       if (res.success && res.user) {
         setMessage('Email verified successfully! Logging you in...')
+        localStorage.setItem('flowboard_user', JSON.stringify(res.user))
         setTimeout(() => {
           onLoginSuccess(res.user)
         }, 600)
@@ -141,7 +148,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
     setError(null)
     setMessage(null)
     try {
-      const res = await fetch('/api/auth/resend-code', {
+      const res = await fetch(getApiUrl('/api/auth/resend-code'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim() }),
@@ -201,7 +208,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
     setError(null)
     setMessage(null)
     try {
-      const res = await fetch('/api/auth/reset-password', {
+      const res = await fetch(getApiUrl('/api/auth/reset-password'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim() }),

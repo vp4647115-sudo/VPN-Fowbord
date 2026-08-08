@@ -15,6 +15,7 @@ import { SkillEngineModal } from './components/SkillEngineModal';
 import { LoginPage } from './components/LoginPage';
 import { auth, loginWithGoogle, logoutUser, syncProjectToFirebase, getUserProjectsFromFirebase, deleteProjectFromFirebase } from './lib/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
+import { getApiUrl } from './lib/api';
 
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -42,6 +43,22 @@ export default function App() {
   const [isSkillModalOpen, setIsSkillModalOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
 
+  // Restore saved session from localStorage on initial load
+  useEffect(() => {
+    const savedUserStr = localStorage.getItem('flowboard_user');
+    if (savedUserStr) {
+      try {
+        const parsed = JSON.parse(savedUserStr);
+        if (parsed && (parsed.email || parsed.uid)) {
+          setCurrentUser(parsed);
+          setIsLoggedIn(true);
+        }
+      } catch (e) {
+        console.warn('Stale user session');
+      }
+    }
+  }, []);
+
   // Check URL parameters for team join invitation link (?joinTeam=...&teamName=...)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -53,15 +70,96 @@ export default function App() {
       setActiveTeamName(decodedName);
       setJoinedTeamNotice(`🎉 Joined team "${decodedName}"! Online real-time collaboration is active.`);
       setIsChatOpen(true);
+      
+      // Auto-open workspace view if current project exists
+      if (currentProject) {
+        setViewMode('workspace');
+      }
     }
-  }, []);
+  }, [currentProject]);
+
+  // Online Real-Time Team Sync & Presence Heartbeat Loop
+  useEffect(() => {
+    if (!activeTeamName) return;
+
+    const teamId = 'team-' + activeTeamName.toLowerCase().replace(/[^a-z0-9]/g, '-');
+    let isSubscribed = true;
+    let lastSyncedAt = 0;
+
+    const syncTeamOnlineState = async () => {
+      try {
+        // 1. Send active member heartbeat presence
+        await fetch(getApiUrl(`/api/teams/${teamId}/presence`), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: currentUser?.uid || currentUser?.email || 'guest-' + Date.now(),
+            email: currentUser?.email || 'online@flowboard.app',
+            displayName: currentUser?.displayName || currentUser?.email?.split('@')[0] || 'Team Collaborator',
+            avatar: currentUser?.photoURL,
+          }),
+        });
+
+        // 2. Fetch latest team state (nodes, connectors, chat)
+        const res = await fetch(getApiUrl(`/api/teams/${teamId}`));
+        if (res.ok && isSubscribed) {
+          const data = await res.json();
+          if (data.success && data.team) {
+            const team = data.team;
+            // Sync nodes, connectors, chat if team updated by another online member
+            if (team.lastUpdated && team.lastUpdated > lastSyncedAt) {
+              lastSyncedAt = team.lastUpdated;
+              
+              if (currentProject) {
+                const updatedProj = {
+                  ...currentProject,
+                  nodes: team.nodes && team.nodes.length > 0 ? team.nodes : currentProject.nodes,
+                  connectors: team.connectors && team.connectors.length > 0 ? team.connectors : currentProject.connectors,
+                  chat: team.chat && team.chat.length > 0 ? team.chat : currentProject.chat,
+                };
+                
+                // Only update state if there's an actual change in data length or nodes
+                if (
+                  JSON.stringify(updatedProj.nodes) !== JSON.stringify(currentProject.nodes) ||
+                  JSON.stringify(updatedProj.connectors) !== JSON.stringify(currentProject.connectors) ||
+                  JSON.stringify(updatedProj.chat) !== JSON.stringify(currentProject.chat)
+                ) {
+                  setCurrentProject(updatedProj);
+                  setProjects((prev) =>
+                    prev.map((p) => (p.id === updatedProj.id ? updatedProj : p))
+                  );
+                }
+              }
+            }
+          }
+        }
+      } catch (err) {
+        // Silent online sync retry
+      }
+    };
+
+    // Initial sync and poll every 1.5 seconds
+    syncTeamOnlineState();
+    const interval = setInterval(syncTeamOnlineState, 1500);
+
+    return () => {
+      isSubscribed = false;
+      clearInterval(interval);
+    };
+  }, [activeTeamName, currentProject, currentUser]);
 
   // Listen to Firebase Auth state
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setCurrentUser(user);
       if (user) {
+        setCurrentUser(user);
         setIsLoggedIn(true);
+        localStorage.setItem('flowboard_user', JSON.stringify({
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName || user.email?.split('@')[0],
+          photoURL: user.photoURL,
+        }));
         try {
           const userProjects = await getUserProjectsFromFirebase(user.uid);
           if (userProjects && userProjects.length > 0) {
@@ -87,7 +185,7 @@ export default function App() {
       while (attempts < 3) {
         try {
           attempts++;
-          const res = await fetch('/api/projects');
+          const res = await fetch(getApiUrl('/api/projects'));
           if (res.ok) {
             const contentType = res.headers.get('content-type');
             if (contentType && contentType.includes('application/json')) {
@@ -133,7 +231,7 @@ export default function App() {
     };
 
     try {
-      const res = await fetch('/api/projects', {
+      const res = await fetch(getApiUrl('/api/projects'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newProj),
@@ -184,7 +282,7 @@ export default function App() {
     );
 
     try {
-      await fetch(`/api/projects/${currentProject.id}`, {
+      await fetch(getApiUrl(`/api/projects/${currentProject.id}`), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedProject),
@@ -195,6 +293,21 @@ export default function App() {
 
     if (currentUser) {
       syncProjectToFirebase(updatedProject, currentUser.uid);
+    }
+
+    // Broadcast live changes to active online team workspace
+    if (activeTeamName && (updatedFields.nodes || updatedFields.connectors || updatedFields.chat)) {
+      const teamId = 'team-' + activeTeamName.toLowerCase().replace(/[^a-z0-9]/g, '-');
+      fetch(getApiUrl(`/api/teams/${teamId}/sync`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nodes: updatedProject.nodes,
+          connectors: updatedProject.connectors,
+          chat: updatedProject.chat,
+          updatedBy: currentUser?.displayName || currentUser?.email || 'Collaborator',
+        }),
+      }).catch((e) => console.warn('Online team sync background error:', e));
     }
   };
 
@@ -207,7 +320,7 @@ export default function App() {
       const updated = { ...targetProj, category: 'Trash' as const };
       
       try {
-        await fetch(`/api/projects/${id}`, {
+        await fetch(getApiUrl(`/api/projects/${id}`), {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(updated),
@@ -233,7 +346,7 @@ export default function App() {
   const handlePermanentDeleteProject = async (id: string) => {
     try {
       try {
-        await fetch(`/api/projects/${id}`, { method: 'DELETE' });
+        await fetch(getApiUrl(`/api/projects/${id}`), { method: 'DELETE' });
       } catch (e) {
         console.warn('Backend delete fallback');
       }
@@ -254,7 +367,7 @@ export default function App() {
 
       const restored = { ...targetProj, category: 'My Projects' as const };
       try {
-        await fetch(`/api/projects/${id}`, {
+        await fetch(getApiUrl(`/api/projects/${id}`), {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(restored),
@@ -277,7 +390,7 @@ export default function App() {
     try {
       const trashedIds = projects.filter((p) => p.category === 'Trash').map((p) => p.id);
       for (const id of trashedIds) {
-        await fetch(`/api/projects/${id}`, { method: 'DELETE' });
+        await fetch(getApiUrl(`/api/projects/${id}`), { method: 'DELETE' });
         if (currentUser) deleteProjectFromFirebase(id);
       }
       setProjects((prev) => prev.filter((p) => p.category !== 'Trash'));
@@ -289,7 +402,7 @@ export default function App() {
   // Use Template to create new canvas workspace
   const handleUseTemplate = async (template: any) => {
     try {
-      const res = await fetch('/api/projects', {
+      const res = await fetch(getApiUrl('/api/projects'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -317,7 +430,7 @@ export default function App() {
   // Duplicate project
   const handleDuplicateProject = async (project: Project) => {
     try {
-      const res = await fetch('/api/projects', {
+      const res = await fetch(getApiUrl('/api/projects'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -343,9 +456,10 @@ export default function App() {
   // Handle chat messages in workspace
   const handleSendMessage = (text: string) => {
     if (!currentProject) return;
+    const authorName = currentUser?.displayName || currentUser?.email?.split('@')[0] || 'You';
     const newMsg: ChatMessage = {
       id: 'm-' + Date.now(),
-      author: currentUser?.displayName || 'You',
+      author: authorName,
       time: new Date().toLocaleTimeString([], {
         hour: '2-digit',
         minute: '2-digit',
@@ -353,6 +467,18 @@ export default function App() {
       text,
     };
     handleUpdateProject({ chat: [...currentProject.chat, newMsg] });
+
+    if (activeTeamName) {
+      const teamId = 'team-' + activeTeamName.toLowerCase().replace(/[^a-z0-9]/g, '-');
+      fetch(getApiUrl(`/api/teams/${teamId}/chat`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          author: authorName,
+          text,
+        }),
+      }).catch((e) => console.warn('Team chat post error:', e));
+    }
   };
 
   // Rename project title directly from Navbar

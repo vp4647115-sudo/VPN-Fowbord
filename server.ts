@@ -22,7 +22,34 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
+// CORS Middleware for domain deployments and cross-origin public API calls
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  res.setHeader("Access-Control-Allow-Origin", origin || "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH");
+  res.setHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization, x-api-key, apikey");
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+  next();
+});
+
 app.use(express.json({ limit: "10mb" }));
+
+// Dynamic origin detection helper for public domains, custom URLs, and local dev
+function getRequestOrigin(req: express.Request): string {
+  if (process.env.APP_URL) {
+    return process.env.APP_URL.endsWith("/") ? process.env.APP_URL.slice(0, -1) : process.env.APP_URL;
+  }
+  const origin = req.headers.origin;
+  if (origin && typeof origin === "string" && origin.length > 0) {
+    return origin;
+  }
+  const host = (req.headers["x-forwarded-host"] as string) || req.get("host") || "localhost:3000";
+  const proto = (req.headers["x-forwarded-proto"] as string) || req.protocol || "http";
+  return `${proto}://${host}`;
+}
 
 // Initialize Gemini client lazily or safely
 function getGeminiClient() {
@@ -87,6 +114,197 @@ app.get("/api/supabase/status", async (req, res) => {
   });
 });
 
+// --- REAL-TIME ONLINE TEAM COLLABORATION ENGINE ---
+interface TeamWorkspaceData {
+  id: string;
+  name: string;
+  nodes: any[];
+  connectors: any[];
+  chat: any[];
+  members: any[];
+  lastUpdated: number;
+}
+
+interface PresenceUser {
+  userId: string;
+  email: string;
+  displayName: string;
+  avatar?: string;
+  x?: number;
+  y?: number;
+  lastActive: number;
+}
+
+const teamsRoomDb: Record<string, TeamWorkspaceData> = {
+  'team-engineering-flow-team': {
+    id: 'team-engineering-flow-team',
+    name: 'Engineering Flow Team',
+    nodes: [],
+    connectors: [],
+    chat: [
+      {
+        id: 'msg-init-1',
+        author: 'System',
+        time: 'Just now',
+        text: '🚀 Online team workspace initialized! Changes are synchronized live across all active team members.'
+      }
+    ],
+    members: [
+      { id: 'm1', name: 'Lead Architect', email: 'architect@flowboard.app', role: 'Owner', status: 'Online' },
+      { id: 'm2', name: 'Sarah Jenkins', email: 'sarah.j@company.com', role: 'Editor', status: 'Online' }
+    ],
+    lastUpdated: Date.now()
+  }
+};
+
+const presenceRoomStore: Record<string, Record<string, PresenceUser>> = {};
+
+// Get or Create Team Workspace State
+app.get("/api/teams/:teamId", (req, res) => {
+  const { teamId } = req.params;
+  const cleanId = teamId.toLowerCase();
+  
+  if (!teamsRoomDb[cleanId]) {
+    const readableName = cleanId.replace(/^team-/, '').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    teamsRoomDb[cleanId] = {
+      id: cleanId,
+      name: readableName || 'FlowBoard Team',
+      nodes: [],
+      connectors: [],
+      chat: [
+        {
+          id: 'msg-init-' + Date.now(),
+          author: 'System',
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          text: `🎉 Team workspace "${readableName}" ready for real-time online collaboration!`
+        }
+      ],
+      members: [],
+      lastUpdated: Date.now()
+    };
+  }
+
+  res.json({
+    success: true,
+    team: teamsRoomDb[cleanId]
+  });
+});
+
+// Real-Time Online Sync Endpoint for Team Workspace
+app.post("/api/teams/:teamId/sync", (req, res) => {
+  const { teamId } = req.params;
+  const { nodes, connectors, chat, updatedBy } = req.body;
+  const cleanId = teamId.toLowerCase();
+
+  if (!teamsRoomDb[cleanId]) {
+    const readableName = cleanId.replace(/^team-/, '').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    teamsRoomDb[cleanId] = {
+      id: cleanId,
+      name: readableName,
+      nodes: nodes || [],
+      connectors: connectors || [],
+      chat: chat || [],
+      members: [],
+      lastUpdated: Date.now()
+    };
+  } else {
+    if (nodes !== undefined) teamsRoomDb[cleanId].nodes = nodes;
+    if (connectors !== undefined) teamsRoomDb[cleanId].connectors = connectors;
+    if (chat !== undefined) teamsRoomDb[cleanId].chat = chat;
+    teamsRoomDb[cleanId].lastUpdated = Date.now();
+  }
+
+  res.json({
+    success: true,
+    team: teamsRoomDb[cleanId],
+    syncedAt: teamsRoomDb[cleanId].lastUpdated
+  });
+});
+
+// Register Presence Heartbeat for Online Team Member
+app.post("/api/teams/:teamId/presence", (req, res) => {
+  const { teamId } = req.params;
+  const { userId, email, displayName, avatar, x, y } = req.body;
+  const cleanId = teamId.toLowerCase();
+
+  if (!presenceRoomStore[cleanId]) {
+    presenceRoomStore[cleanId] = {};
+  }
+
+  const activeUserId = userId || email || 'user-' + req.ip;
+  presenceRoomStore[cleanId][activeUserId] = {
+    userId: activeUserId,
+    email: email || 'online@flowboard.app',
+    displayName: displayName || email?.split('@')[0] || 'Team Collaborator',
+    avatar: avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${activeUserId}`,
+    x: x ?? 0,
+    y: y ?? 0,
+    lastActive: Date.now()
+  };
+
+  // Filter users active in last 12 seconds
+  const now = Date.now();
+  const onlineUsers = Object.values(presenceRoomStore[cleanId]).filter(u => now - u.lastActive < 12000);
+
+  res.json({
+    success: true,
+    onlineCount: onlineUsers.length,
+    onlineUsers
+  });
+});
+
+// Get Online Team Members & Live Cursors
+app.get("/api/teams/:teamId/presence", (req, res) => {
+  const { teamId } = req.params;
+  const cleanId = teamId.toLowerCase();
+  
+  const roomUsers = presenceRoomStore[cleanId] || {};
+  const now = Date.now();
+  const activeOnlineUsers = Object.values(roomUsers).filter(u => now - u.lastActive < 12000);
+
+  res.json({
+    success: true,
+    onlineCount: activeOnlineUsers.length,
+    onlineUsers: activeOnlineUsers
+  });
+});
+
+// Post Team Room Chat Message
+app.post("/api/teams/:teamId/chat", (req, res) => {
+  const { teamId } = req.params;
+  const { author, text } = req.body;
+  const cleanId = teamId.toLowerCase();
+
+  if (!teamsRoomDb[cleanId]) {
+    const readableName = cleanId.replace(/^team-/, '').replace(/-/g, ' ');
+    teamsRoomDb[cleanId] = {
+      id: cleanId,
+      name: readableName,
+      nodes: [],
+      connectors: [],
+      chat: [],
+      members: [],
+      lastUpdated: Date.now()
+    };
+  }
+
+  const newMsg = {
+    id: 'msg-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+    author: author || 'Team Member',
+    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    text: text || ''
+  };
+
+  teamsRoomDb[cleanId].chat.push(newMsg);
+  teamsRoomDb[cleanId].lastUpdated = Date.now();
+
+  res.json({
+    success: true,
+    message: newMsg,
+    chat: teamsRoomDb[cleanId].chat
+  });
+});
+
 // Send Team Invite via Mailer Service & Supabase Auth
 app.post("/api/team/invite", async (req, res) => {
   try {
@@ -98,16 +316,54 @@ app.post("/api/team/invite", async (req, res) => {
     const cleanEmail = email.trim().toLowerCase();
     const activeTeamName = teamName || "FlowBoard Team";
     const activeRole = role || "Editor";
-    const inviteLink = redirectUrl || `http://localhost:3000`;
+    const teamId = 'team-' + activeTeamName.toLowerCase().replace(/[^a-z0-9]/g, '-');
+    const appOrigin = getRequestOrigin(req);
+    const inviteLink = redirectUrl || `${appOrigin}/?joinTeam=${encodeURIComponent(teamId)}&teamName=${encodeURIComponent(activeTeamName)}`;
+
+    // Ensure team room exists in teamsRoomDb
+    if (!teamsRoomDb[teamId]) {
+      teamsRoomDb[teamId] = {
+        id: teamId,
+        name: activeTeamName,
+        nodes: [],
+        connectors: [],
+        chat: [
+          {
+            id: 'msg-init-' + Date.now(),
+            author: 'System',
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            text: `Invitation dispatched to ${cleanEmail} as ${activeRole}. Link: ${inviteLink}`
+          }
+        ],
+        members: [],
+        lastUpdated: Date.now()
+      };
+    }
+
+    // Add member to team room
+    const existingMemberIndex = teamsRoomDb[teamId].members.findIndex(m => m.email === cleanEmail);
+    if (existingMemberIndex >= 0) {
+      teamsRoomDb[teamId].members[existingMemberIndex].role = activeRole;
+      teamsRoomDb[teamId].members[existingMemberIndex].status = 'Invited (Online Link Ready)';
+    } else {
+      teamsRoomDb[teamId].members.push({
+        id: 'm-' + Date.now(),
+        name: cleanEmail.split('@')[0],
+        email: cleanEmail,
+        role: activeRole,
+        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${cleanEmail}`,
+        status: 'Invited (Online Link Ready)'
+      });
+    }
 
     // Dispatch Email via Nodemailer Mailer Service
     const mailResult = await sendEmail({
       to: cleanEmail,
       subject: `Invitation to join ${activeTeamName} on FlowBoard`,
-      text: `You've been invited to join ${activeTeamName} as an ${activeRole}. Accept invitation here: ${inviteLink}`,
+      text: `You've been invited to join ${activeTeamName} as an ${activeRole}. Accept invitation and work online here: ${inviteLink}`,
       html: generateTeamInviteEmailHtml(cleanEmail, activeTeamName, activeRole, inviteLink, senderEmail),
       type: "invite",
-      metadata: { teamName: activeTeamName, role: activeRole }
+      metadata: { teamName: activeTeamName, role: activeRole, teamId }
     });
 
     const supabase = getSupabaseClient();
@@ -128,9 +384,10 @@ app.post("/api/team/invite", async (req, res) => {
     return res.json({
       success: true,
       emailSent: mailResult.success,
+      inviteUrl: inviteLink,
       message: mailResult.success
-        ? `Invitation email sent directly to ${cleanEmail}!`
-        : `Invitation recorded for ${cleanEmail}.`,
+        ? `Invitation email sent directly to ${cleanEmail}! They can click the link to work online together.`
+        : `Invitation recorded for ${cleanEmail}. Online link: ${inviteLink}`,
       mailDetails: mailResult,
       supabaseConnected: supabaseSuccess,
     });
@@ -154,7 +411,7 @@ app.post("/api/supabase/credentials", (req, res) => {
 // --- MAILING SERVICE & AUTHENTICATION ENDPOINTS ---
 const userAccountsDb: Record<string, { email: string; passwordHash: string; fullName: string; verified: boolean; verificationCode: string }> = {};
 
-// 1. Sign Up Endpoint (with Mailer Verification Code dispatch)
+// 1. Sign Up Endpoint (with Mailer Verification Code dispatch & Duplicate Account Guard)
 app.post("/api/auth/signup", async (req, res) => {
   try {
     const { email, password, fullName } = req.body;
@@ -166,6 +423,15 @@ app.post("/api/auth/signup", async (req, res) => {
     }
 
     const cleanEmail = email.trim().toLowerCase();
+
+    // Check if account already exists and is verified
+    if (userAccountsDb[cleanEmail] && userAccountsDb[cleanEmail].verified) {
+      return res.status(400).json({
+        success: false,
+        error: `An account with ${cleanEmail} already exists. Please sign in or reset password.`
+      });
+    }
+
     const supabase = getSupabaseClient();
     let supabaseSuccess = false;
 
@@ -474,7 +740,7 @@ app.post("/api/auth/google", async (req, res) => {
       try {
         const { data, error } = await supabase.auth.signInWithOAuth({
           provider: "google",
-          options: { redirectTo: `http://localhost:3000` }
+          options: { redirectTo: getRequestOrigin(req) }
         });
         if (!error && data?.url) {
           return res.json({ success: true, url: data.url });

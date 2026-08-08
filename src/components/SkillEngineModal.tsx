@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { getApiUrl } from '../lib/api';
 import { Button } from '@/components/ui/button';
 import { SkillRole } from '@/lib/skillEngine/types';
 
@@ -28,7 +29,7 @@ export function SkillEngineModal({ isOpen, onClose, currentUserRole = 'Editor' }
   const fetchStatus = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/skill-engine/status');
+      const res = await fetch(getApiUrl('/api/skill-engine/status'));
       if (res.ok) {
         const data = await res.json();
         setStatusData(data);
@@ -44,7 +45,7 @@ export function SkillEngineModal({ isOpen, onClose, currentUserRole = 'Editor' }
     setTesting(true);
     setTestResult(null);
     try {
-      const res = await fetch('/api/skill-engine/process', {
+      const res = await fetch(getApiUrl('/api/skill-engine/process'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

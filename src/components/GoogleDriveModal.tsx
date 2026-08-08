@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Project } from '../types';
+import { getApiUrl } from '../lib/api';
 
 interface GoogleDriveModalProps {
   isOpen: boolean;
@@ -36,7 +37,7 @@ export const GoogleDriveModal: React.FC<GoogleDriveModalProps> = ({
   const checkStatus = async () => {
     try {
       setIsLoading(true);
-      const res = await fetch('/api/drive/status');
+      const res = await fetch(getApiUrl('/api/drive/status'));
       if (!res.ok) return;
       const contentType = res.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) return;
@@ -60,7 +61,7 @@ export const GoogleDriveModal: React.FC<GoogleDriveModalProps> = ({
 
   const fetchFiles = async () => {
     try {
-      const res = await fetch('/api/drive/files');
+      const res = await fetch(getApiUrl('/api/drive/files'));
       if (!res.ok) return;
       const contentType = res.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) return;
@@ -96,7 +97,7 @@ export const GoogleDriveModal: React.FC<GoogleDriveModalProps> = ({
   const handleConnect = async () => {
     try {
       setMessage(null);
-      const res = await fetch('/api/drive/auth-url');
+      const res = await fetch(getApiUrl('/api/drive/auth-url'));
       const data = await res.json();
       if (data.success && data.url) {
         // Open OAuth consent in a popup window
@@ -119,7 +120,7 @@ export const GoogleDriveModal: React.FC<GoogleDriveModalProps> = ({
 
   const handleDisconnect = async () => {
     try {
-      await fetch('/api/drive/disconnect', { method: 'POST' });
+      await fetch(getApiUrl('/api/drive/disconnect'), { method: 'POST' });
       setIsConnected(false);
       setFiles([]);
       setMessage({ text: 'Disconnected from Google Drive', type: 'success' });
@@ -133,7 +134,7 @@ export const GoogleDriveModal: React.FC<GoogleDriveModalProps> = ({
     try {
       setIsExporting(true);
       setMessage(null);
-      const res = await fetch('/api/drive/export', {
+      const res = await fetch(getApiUrl('/api/drive/export'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ project: currentProject }),
@@ -156,7 +157,7 @@ export const GoogleDriveModal: React.FC<GoogleDriveModalProps> = ({
     try {
       setIsImportingId(fileId);
       setMessage(null);
-      const res = await fetch(`/api/drive/import/${fileId}`);
+      const res = await fetch(getApiUrl(`/api/drive/import/${fileId}`));
       const data = await res.json();
       if (data.success && data.project) {
         setMessage({ text: `Imported "${data.project.title}" to Canvas!`, type: 'success' });
