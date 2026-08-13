@@ -2245,7 +2245,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
           onMouseDown={(e) => e.stopPropagation()}
           onMouseUp={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
-          className="fixed top-20 right-10 z-40 bg-white/95 backdrop-blur-xl border border-white/80 rounded-2xl shadow-2xl p-4 flex flex-col gap-3 w-64 glass-panel animate-in fade-in zoom-in-95"
+          className="fixed top-32 right-6 z-40 bg-white/95 backdrop-blur-xl border border-white/80 rounded-2xl shadow-2xl p-4 flex flex-col gap-3 w-64 glass-panel animate-in fade-in zoom-in-95"
         >
           <div className="flex items-center justify-between border-b border-[#c3c6d7]/30 pb-2">
             <span className="text-xs font-bold text-[#191c1e] flex items-center gap-1.5">
@@ -2307,7 +2307,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
           onMouseDown={(e) => e.stopPropagation()}
           onMouseUp={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
-          className="fixed top-20 right-10 z-40 bg-white/95 backdrop-blur-xl border border-white/80 rounded-2xl shadow-2xl p-4 flex flex-col gap-3.5 w-72 glass-panel animate-in fade-in zoom-in-95"
+          className="fixed top-32 right-6 z-40 bg-white/95 backdrop-blur-xl border border-white/80 rounded-2xl shadow-2xl p-4 flex flex-col gap-3.5 w-72 glass-panel animate-in fade-in zoom-in-95"
         >
           {/* Header */}
           <div className="flex items-center justify-between border-b border-[#c3c6d7]/30 pb-2">

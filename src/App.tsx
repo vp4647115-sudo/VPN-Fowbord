@@ -701,7 +701,7 @@ export default function App() {
               )}
 
               {/* View Switcher Bar floating toggle for Canvas */}
-              <div className="fixed top-18 right-6 z-40 flex items-center gap-1 bg-[#121215]/90 border border-white/10 rounded-full p-1 shadow-2xl backdrop-blur-md">
+              <div className="fixed top-20 right-6 z-40 flex items-center gap-1 bg-[#121215]/90 border border-white/10 rounded-full p-1 shadow-2xl backdrop-blur-md">
                 {(['canvas', 'board', 'timeline', 'table', 'analytics'] as BoardMode[]).map((m) => (
                   <button
                     key={m}

@@ -77,7 +77,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const completedTasksCount = allNodesList.filter((n) => n.status === 'Done').length;
 
   return (
-    <main className="flex-1 overflow-y-auto bg-[#0a0a0c] text-slate-100 p-6 md:p-10 pt-20 select-none">
+    <main className="flex-1 overflow-y-auto bg-[#0a0a0c] text-slate-100 p-6 md:p-10 select-none">
       <div className="max-w-7xl mx-auto space-y-8">
         
         {/* PAGE HEADER */}

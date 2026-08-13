@@ -22,13 +22,54 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
-// CORS Middleware for domain deployments and cross-origin public API calls
+// Rate limiting store and middleware for API routes
+const rateLimitStore: Record<string, { count: number; resetTime: number }> = {};
+
+function apiRateLimiter(limit: number = 60, windowMs: number = 60000) {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const ip = (req.headers["x-forwarded-for"] as string) || req.ip || "127.0.0.1";
+    const now = Date.now();
+
+    if (!rateLimitStore[ip] || now > rateLimitStore[ip].resetTime) {
+      rateLimitStore[ip] = { count: 1, resetTime: now + windowMs };
+      return next();
+    }
+
+    rateLimitStore[ip].count++;
+    if (rateLimitStore[ip].count > limit) {
+      return res.status(429).json({
+        success: false,
+        error: "Too many requests. Please slow down and try again later.",
+      });
+    }
+    next();
+  };
+}
+
+// Allowed Origin Validator for CORS
+function isAllowedOrigin(origin: string): boolean {
+  if (!origin) return true;
+  if (origin.includes("localhost") || origin.includes("127.0.0.1")) return true;
+  if (origin.endsWith(".run.app") || origin.endsWith(".ai.studio") || origin.endsWith(".vpnpro.in")) return true;
+  if (process.env.APP_URL && origin.startsWith(process.env.APP_URL)) return true;
+  return false;
+}
+
+// CORS Middleware with origin validation and security headers
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  res.setHeader("Access-Control-Allow-Origin", origin || "*");
+  if (origin && isAllowedOrigin(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+  } else if (!origin) {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+  } else {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+  }
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH");
   res.setHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization, x-api-key, apikey");
-  res.setHeader("Access-Control-Allow-Credentials", "true");
+
   if (req.method === "OPTIONS") {
     return res.status(200).end();
   }
@@ -36,6 +77,8 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json({ limit: "10mb" }));
+app.use("/api/auth", apiRateLimiter(30, 60000));
+app.use("/api/ai", apiRateLimiter(20, 60000));
 
 // Dynamic origin detection helper for public domains, custom URLs, and local dev
 function getRequestOrigin(req: express.Request): string {

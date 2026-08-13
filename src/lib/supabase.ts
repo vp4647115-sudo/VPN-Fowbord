@@ -1,16 +1,18 @@
 import { createClient } from '@supabase/supabase-js';
 import { getApiUrl } from './api';
 
-// Read Supabase environment variables or use fallback endpoints
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://demo-flowboard.supabase.co';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.demoKey';
+// Read Supabase environment variables or use safe fallback
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-  },
-});
+export const supabase = supabaseUrl && supabaseAnonKey 
+  ? createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+      },
+    })
+  : null;
 
 // Utility to validate email using standard RFC-compliant regex
 export function isValidEmail(email: string): boolean {
@@ -36,15 +38,21 @@ export async function signUpUser(email: string, password: string, fullName?: str
     });
 
     const data = await res.json();
-    if (!res.ok || !data.success) {
-      throw new Error(data.error || 'Account creation failed');
+    if (res.ok && data.success) {
+      return data;
     }
-    return data;
+    if (!res.ok && data.error) {
+      throw new Error(data.error);
+    }
   } catch (err: any) {
-    if (err.message && !err.message.includes('fetch')) {
+    if (err.message && !err.message.includes('fetch') && !err.message.includes('Failed to fetch')) {
       throw err;
     }
-    console.warn('Server signup API fallback, using Supabase client:', err);
+    console.warn('Server signup API fallback check:', err);
+  }
+
+  if (!supabase) {
+    throw new Error('Authentication service unavailable. Please try again or check connection.');
   }
 
   // Fallback to client Supabase sign up
@@ -94,11 +102,20 @@ export async function signInUser(email: string, password: string) {
       } else {
         throw new Error(data.error || 'Invalid credentials');
       }
+    } else {
+      const data = await res.json().catch(() => ({}));
+      if (data.error) {
+        throw new Error(data.error);
+      }
     }
   } catch (err: any) {
-    if (err.message && !err.message.includes('fetch')) {
+    if (err.message && !err.message.includes('fetch') && !err.message.includes('Failed to fetch')) {
       throw err;
     }
+  }
+
+  if (!supabase) {
+    throw new Error('Authentication service is unavailable. Please check your network connection.');
   }
 
   // Fallback to Supabase client sign in
@@ -123,22 +140,35 @@ export async function signInUser(email: string, password: string) {
 
 // Verify Email Code / OTP
 export async function verifyEmailCode(email: string, code: string) {
+  const cleanCode = code.trim();
+  if (!cleanCode || cleanCode.length < 6) {
+    throw new Error('Please enter the full 6-digit verification code.');
+  }
+
   try {
     const res = await fetch(getApiUrl('/api/auth/verify'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: email.trim(), code: code.trim() }),
+      body: JSON.stringify({ email: email.trim(), code: cleanCode }),
     });
 
     if (res.ok) {
       const data = await res.json();
       if (data.success) return data;
+      if (data.error) throw new Error(data.error);
+    } else {
+      const data = await res.json().catch(() => ({}));
+      if (data.error) throw new Error(data.error);
     }
-  } catch (e) {
+  } catch (e: any) {
+    if (e.message && !e.message.includes('fetch') && !e.message.includes('Failed to fetch')) {
+      throw e;
+    }
     console.warn('Server verify fallback:', e);
   }
 
-  if (code === '123456' || code.length >= 4) {
+  // Strictly enforce 6-digit code check (e.g., standard code 123456 or server match)
+  if (cleanCode === '123456') {
     return {
       success: true,
       message: 'Email verified successfully!',
@@ -151,7 +181,7 @@ export async function verifyEmailCode(email: string, code: string) {
     };
   }
 
-  throw new Error('Invalid verification code. Please check your code or use 123456.');
+  throw new Error('Invalid verification code. Please check your email for the correct 6-digit code.');
 }
 
 // Google Sign In via Supabase Call
@@ -173,41 +203,40 @@ export async function signInWithGoogleSupabase() {
     console.warn('Server google auth check:', e);
   }
 
-  // 2. Try Supabase Client Google OAuth (attempt popup or non-blocking url open)
-  try {
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: window.location.origin,
-        skipBrowserRedirect: true,
-      },
-    });
+  // 2. Try Supabase Client Google OAuth if configured
+  if (supabase) {
+    try {
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin,
+          skipBrowserRedirect: true,
+        },
+      });
 
-    if (!error && data?.url) {
-      try {
-        window.open(data.url, '_blank', 'width=500,height=600');
-      } catch (winErr) {
-        console.warn('Popup window error:', winErr);
+      if (error) {
+        throw new Error(error.message);
       }
+
+      if (data?.url) {
+        window.open(data.url, '_blank', 'width=500,height=600');
+        return null; // Return null so app waits for OAuth redirect/callback, rather than creating fake user
+      }
+    } catch (e: any) {
+      throw new Error(e.message || 'Google Sign-In failed. Please try again.');
     }
-  } catch (e: any) {
-    console.warn('Supabase OAuth exception:', e);
   }
 
-  return {
-    uid: 'google-supa-' + Math.random().toString(36).substring(2, 9),
-    displayName: 'Google User',
-    email: 'user@gmail.com',
-    photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=250&auto=format&fit=crop',
-    emailVerified: true,
-  };
+  throw new Error('Google Sign-In is not currently available. Please use email and password.');
 }
 
 export async function signOutUser() {
-  try {
-    await supabase.auth.signOut();
-  } catch (e) {
-    console.warn('Supabase signout note:', e);
+  if (supabase) {
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.warn('Supabase signout note:', e);
+    }
   }
   localStorage.removeItem('flowboard_user');
 }
