@@ -4,11 +4,19 @@
  */
 
 export function getApiUrl(path: string): string {
-  const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
-  if (baseUrl) {
-    const cleanBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
-    return `${cleanBase}${cleanPath}`;
+  const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
+  
+  if (baseUrl && typeof baseUrl === 'string') {
+    const trimmed = baseUrl.trim();
+    // If running in browser and baseUrl points to localhost/127.0.0.1 while site is hosted on Cloud Run / external origin, fallback to relative path
+    if (typeof window !== 'undefined' && (trimmed.includes('localhost') || trimmed.includes('127.0.0.1')) && !window.location.hostname.includes('localhost')) {
+      return cleanPath;
+    }
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('//')) {
+      const cleanBase = trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
+      return `${cleanBase}${cleanPath}`;
+    }
   }
   return cleanPath;
 }

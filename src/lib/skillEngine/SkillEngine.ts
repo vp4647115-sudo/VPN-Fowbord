@@ -21,7 +21,27 @@ export class SkillEngine {
    * Register default enterprise skill
    */
   private registerDefaultSkill(): void {
-    const defaultMarkdown = `# AGENTS.md — FlowBoard.ai Enterprise Agent Directives
+    let rawMarkdown = '';
+
+    try {
+      if (typeof process !== 'undefined' && process.versions && process.versions.node) {
+        const fs = require('fs');
+        const path = require('path');
+        const skillPath = path.join(process.cwd(), 'SKILL.md');
+        const agentsPath = path.join(process.cwd(), 'AGENTS.md');
+
+        if (fs.existsSync(skillPath)) {
+          rawMarkdown = fs.readFileSync(skillPath, 'utf-8');
+        } else if (fs.existsSync(agentsPath)) {
+          rawMarkdown = fs.readFileSync(agentsPath, 'utf-8');
+        }
+      }
+    } catch (e) {
+      console.warn('Unable to load SKILL.md/AGENTS.md from disk:', e);
+    }
+
+    if (!rawMarkdown) {
+      rawMarkdown = `# SKILL.md — FlowBoard.ai Enterprise Agent Directives
 
 > **Project Identity**: FlowBoard.ai — Enterprise Systems Architecture, Algorithm Design & AI Diagram Whiteboard Platform
 > **Domain**: System Architecture, BPMN Workflows, Algorithm Design, Full-Stack SaaS
@@ -47,10 +67,12 @@ export class SkillEngine {
 ## 🎨 3. UI / UX & DESIGN SYSTEM
 - **Dark Luxury Aesthetic**: Deep slate canvas (\`#0a0a0c\`, \`#121215\`), glassmorphism cards, vivid electric blue accents (\`#3b82f6\`).
 - **Brand Typography**: Bold uppercase tracking for headers (\`FLOWBOARD\` — \`FLOW\` in blue, \`BOARD\` in white/dark slate).
-- **Accessibility**: WCAG 2.1 AA contrast compliance, minimum 44px touch targets.
+- **High-Contrast Card Fills**: All AI generated nodes MUST use distinct, vibrant, high-contrast card background fills with clear stroke borders.
+- **Strict Black Fill Prohibition**: NEVER output pure black or dark canvas fills for node card backgrounds or text.
 `;
+    }
 
-    const parsed = SkillParser.parse(defaultMarkdown, 'flowboard-core', 'FlowBoard Enterprise Architecture');
+    const parsed = SkillParser.parse(rawMarkdown, 'flowboard-core', 'FlowBoard Enterprise Architecture');
     this.activeSkills.set(parsed.id, parsed);
   }
 

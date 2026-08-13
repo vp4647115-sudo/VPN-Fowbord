@@ -2,9 +2,9 @@ import React, { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
-import { loginWithGoogle } from '@/lib/firebase'
 import { signUpUser, signInUser, verifyEmailCode, isValidEmail, signInWithGoogleSupabase } from '@/lib/supabase'
 import { getApiUrl } from '@/lib/api'
+import { RegistrationForm } from './RegistrationForm'
 
 interface LoginPageProps {
   onLoginSuccess: (user?: any) => void;
@@ -20,9 +20,30 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
 
+  // Registration step state
+  const [pendingUser, setPendingUser] = useState<any | null>(null)
+  const [showRegistrationForm, setShowRegistrationForm] = useState(false)
+
   // Verification Step state
   const [isVerifying, setIsVerifying] = useState(false)
   const [verificationCode, setVerificationCode] = useState('')
+
+  const proceedToRegistration = (user: any) => {
+    localStorage.setItem('flowboard_user', JSON.stringify(user))
+    setPendingUser(user)
+    setShowRegistrationForm(true)
+  }
+
+  const handleRegistrationComplete = (profile: any) => {
+    const finalUser = {
+      ...pendingUser,
+      displayName: profile.firstName || pendingUser?.displayName || 'User',
+      phoneNumber: profile.phoneNumber,
+      location: profile.location,
+    }
+    localStorage.setItem('flowboard_user', JSON.stringify(finalUser))
+    onLoginSuccess(finalUser)
+  }
 
   const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value
@@ -81,8 +102,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
             email: cleanEmail,
             displayName: fullName || cleanEmail.split('@')[0],
           }
-          localStorage.setItem('flowboard_user', JSON.stringify(loggedUser))
-          onLoginSuccess(loggedUser)
+          proceedToRegistration(loggedUser)
         }
       } else {
         // --- SUPABASE LOG IN ---
@@ -91,16 +111,14 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
           setIsVerifying(true)
           setMessage(`Please verify your email address to complete sign in. Enter the code sent to your email.`)
         } else if (res.user) {
-          localStorage.setItem('flowboard_user', JSON.stringify(res.user))
-          onLoginSuccess(res.user)
+          proceedToRegistration(res.user)
         } else {
           const loggedUser = {
             uid: 'supa-' + Date.now(),
             email: cleanEmail,
             displayName: cleanEmail.split('@')[0],
           }
-          localStorage.setItem('flowboard_user', JSON.stringify(loggedUser))
-          onLoginSuccess(loggedUser)
+          proceedToRegistration(loggedUser)
         }
       }
     } catch (err: any) {
@@ -126,11 +144,10 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
     try {
       const res = await verifyEmailCode(email, verificationCode)
       if (res.success && res.user) {
-        setMessage('Email verified successfully! Logging you in...')
-        localStorage.setItem('flowboard_user', JSON.stringify(res.user))
+        setMessage('Email verified successfully! Complete your registration below.')
         setTimeout(() => {
-          onLoginSuccess(res.user)
-        }, 600)
+          proceedToRegistration(res.user)
+        }, 500)
       }
     } catch (err: any) {
       setError(err?.message || 'Invalid verification code. Please check your code or try code 123456.')
@@ -174,26 +191,20 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
     setError(null)
     setMessage(null)
     try {
-      // 1. Try Firebase Google Popup Login first
-      const fbUser = await loginWithGoogle()
-      if (fbUser) {
-        onLoginSuccess(fbUser)
-        return
-      }
-
-      // 2. Try Supabase Google OAuth / Fallback
+      // Use Supabase Google OAuth integration exclusively
       const supaUser = await signInWithGoogleSupabase()
       if (supaUser) {
-        onLoginSuccess(supaUser)
+        proceedToRegistration(supaUser)
       }
     } catch (err: any) {
-      console.warn('Google login fallback:', err)
-      onLoginSuccess({
-        uid: 'google-user-' + Date.now(),
+      console.warn('Supabase Google login exception:', err)
+      const sessionUser = {
+        uid: 'google-supa-' + Date.now(),
         displayName: 'Google User',
         email: 'user@gmail.com',
         photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=250&auto=format&fit=crop',
-      })
+      }
+      proceedToRegistration(sessionUser)
     } finally {
       setLoading(false)
     }
@@ -228,6 +239,27 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
     } finally {
       setLoading(false)
     }
+  }
+
+  if (showRegistrationForm) {
+    return (
+      <div className="min-h-screen w-full bg-[#0a0a0c] flex items-center justify-center p-3 sm:p-6 select-none font-sans animate-in fade-in duration-300">
+        <div className="w-full max-w-xl">
+          <RegistrationForm
+            initialEmail={pendingUser?.email || email}
+            initialName={pendingUser?.displayName || fullName}
+            onComplete={handleRegistrationComplete}
+            onCancel={() => {
+              setShowRegistrationForm(false)
+              setPendingUser(null)
+            }}
+            title="User Registration Details"
+            subtitle="Please complete all form fields below to access the website."
+            buttonText="Complete & Continue to Website →"
+          />
+        </div>
+      </div>
+    )
   }
 
   return (

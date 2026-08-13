@@ -611,6 +611,71 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
       }
     };
 
+    const addAttachment = useCallback((file: File, url: string, width: number, height: number) => {
+      const id = `${file.name}-${file.lastModified}-${Math.random().toString(36).slice(2, 8)}`;
+      setAttachments((prev) => [...prev, { id, file, url, name: file.name, width, height }]);
+    }, []);
+
+    const handlePaste = useCallback(
+      (e: React.ClipboardEvent) => {
+        const clipboardData = e.clipboardData;
+        if (!clipboardData) return;
+
+        // 1. Check for image files in clipboard (e.g. copied screenshots)
+        const files = Array.from(clipboardData.files || []) as File[];
+        const imageFiles = files.filter((f) => f.type.startsWith("image/"));
+
+        if (imageFiles.length > 0) {
+          e.preventDefault();
+          if (!expanded) {
+            setIsSmoothResize(false);
+            setExpanded(true);
+          }
+          const room = Math.max(0, maxAttachments - attachments.length);
+          const accepted = imageFiles.slice(0, room);
+          for (const file of accepted) {
+            const url = URL.createObjectURL(file);
+            const img = new Image();
+            img.onload = () => addAttachment(file, url, img.naturalWidth, img.naturalHeight);
+            img.onerror = () => addAttachment(file, url, 800, 600);
+            img.src = url;
+          }
+          return;
+        }
+
+        // 2. Check for text data in clipboard
+        const textData = clipboardData.getData("text");
+        if (textData) {
+          if (!expanded) {
+            e.preventDefault();
+            setIsSmoothResize(false);
+            setExpanded(true);
+            handleValueChange(textData);
+            setTimeout(() => {
+              if (textareaRef.current) {
+                textareaRef.current.focus();
+                textareaRef.current.setSelectionRange(textData.length, textData.length);
+              }
+            }, 50);
+          } else if (e.target !== textareaRef.current) {
+            e.preventDefault();
+            const start = textareaRef.current?.selectionStart ?? value.length;
+            const end = textareaRef.current?.selectionEnd ?? value.length;
+            const newValue = value.substring(0, start) + textData + value.substring(end);
+            handleValueChange(newValue);
+            setTimeout(() => {
+              if (textareaRef.current) {
+                textareaRef.current.focus();
+                const newPos = start + textData.length;
+                textareaRef.current.setSelectionRange(newPos, newPos);
+              }
+            }, 50);
+          }
+        }
+      },
+      [expanded, maxAttachments, attachments.length, addAttachment, handleValueChange, value]
+    );
+
     const handleSubmit = () => {
       if (value.trim() === "" && !hasAttachments) return;
       setIsSmoothResize(false);
@@ -651,11 +716,6 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
         img.onerror = () => addAttachment(file, url, 800, 600);
         img.src = url;
       }
-    };
-
-    const addAttachment = (file: File, url: string, width: number, height: number) => {
-      const id = `${file.name}-${file.lastModified}-${Math.random().toString(36).slice(2, 8)}`;
-      setAttachments((prev) => [...prev, { id, file, url, name: file.name, width, height }]);
     };
 
     const removeAttachment = (id: string) => {
@@ -758,6 +818,7 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
                 textareaRef.current?.focus();
               }
             }}
+            onPaste={handlePaste}
             style={{
               borderRadius: 24,
               height: expanded ? containerHeight : 48,
@@ -765,7 +826,7 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
               overflow: expanded ? "visible" : "hidden",
             }}
             className={cn(
-              "relative w-full border border-blue-200 bg-white/95 backdrop-blur-lg shadow-lg focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20 hover:border-blue-300 z-10 transition-all",
+              "relative w-full border border-blue-200 bg-white/95 backdrop-blur-lg shadow-lg focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20 hover:border-blue-300 z-10 transition-all select-text",
               expanded ? "cursor-text" : "cursor-default"
             )}
           >
@@ -781,6 +842,7 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
               value={value}
               onChange={(e) => handleValueChange(e.target.value)}
               onScroll={updateFades}
+              onPaste={handlePaste}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
@@ -801,7 +863,7 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
                   : "opacity 0.3s ease-out, transform 0.3s ease-out, height 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)"
               }}
               className={cn(
-                "prompt-scrollbar absolute top-0 inset-x-0 z-[1] w-full resize-none bg-transparent pl-4 pr-12 py-3.5 text-sm leading-[22px] text-slate-900 outline-none placeholder:font-medium placeholder:text-slate-400 cursor-text",
+                "prompt-scrollbar absolute top-0 inset-x-0 z-[1] w-full resize-none bg-transparent pl-4 pr-12 py-3.5 text-sm leading-[22px] text-slate-900 outline-none placeholder:font-medium placeholder:text-slate-400 cursor-text select-text",
                 expanded ? "opacity-100 scale-100 translate-y-0" : "opacity-0 scale-95 -translate-y-1 pointer-events-none",
                 isScrolling ? "overflow-y-auto" : "overflow-y-hidden",
                 (isRecording || loading) && "pointer-events-none"
@@ -913,9 +975,45 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
 
               <button
                 type="button" onMouseDown={(e) => e.preventDefault()} onClick={openFileChooser} disabled={attachments.length >= maxAttachments}
-                className="ml-auto flex size-7 items-center justify-center rounded-full text-slate-500 transition-all duration-200 hover:bg-slate-100 hover:text-slate-800 outline-none cursor-default disabled:opacity-40 disabled:pointer-events-none"
+                title="Add attachment image"
+                className="ml-auto flex size-7 items-center justify-center rounded-full text-slate-500 transition-all duration-200 hover:bg-slate-100 hover:text-slate-800 outline-none cursor-pointer disabled:opacity-40 disabled:pointer-events-none"
               >
                 <PlusIcon />
+              </button>
+
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  try {
+                    const text = await navigator.clipboard.readText();
+                    if (text) {
+                      if (!expanded) {
+                        setIsSmoothResize(false);
+                        setExpanded(true);
+                      }
+                      const start = textareaRef.current?.selectionStart ?? value.length;
+                      const end = textareaRef.current?.selectionEnd ?? value.length;
+                      const newValue = value.substring(0, start) + text + value.substring(end);
+                      handleValueChange(newValue);
+                      setTimeout(() => {
+                        if (textareaRef.current) {
+                          textareaRef.current.focus();
+                          const newPos = start + text.length;
+                          textareaRef.current.setSelectionRange(newPos, newPos);
+                        }
+                      }, 50);
+                    }
+                  } catch (err) {
+                    console.warn("Clipboard access notice:", err);
+                  }
+                }}
+                title="Paste from clipboard"
+                className="flex items-center gap-1 rounded-full px-2 py-1 text-slate-500 hover:bg-slate-100 hover:text-[#004ac6] transition-all text-xs font-semibold outline-none cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-sm">content_paste</span>
+                <span className="hidden sm:inline">Paste</span>
               </button>
             </div>
 

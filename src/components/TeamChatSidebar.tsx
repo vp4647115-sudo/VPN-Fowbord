@@ -95,7 +95,7 @@ export const TeamChatSidebar: React.FC<TeamChatSidebarProps> = ({
               </div>
 
               <div
-                className={`p-3 rounded-2xl text-xs max-w-[88%] leading-relaxed ${
+                className={`p-3 rounded-2xl text-xs max-w-[88%] leading-relaxed select-text ${
                   isSelf
                     ? 'bg-[#004ac6] text-white rounded-tr-none shadow-xs'
                     : 'bg-[#f2f4f6] text-[#191c1e] rounded-tl-none border border-[#c3c6d7]/30'
@@ -109,14 +109,14 @@ export const TeamChatSidebar: React.FC<TeamChatSidebarProps> = ({
       </div>
 
       {/* Input Form */}
-      <div className="p-3 border-t border-[#c3c6d7]/30 bg-white">
+      <div className="p-3 border-t border-[#c3c6d7]/30 bg-white select-text">
         <form onSubmit={handleSubmit} className="relative flex items-center">
           <input
             type="text"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             placeholder="Type a message..."
-            className="w-full bg-[#f2f4f6] border border-[#c3c6d7] focus:border-[#004ac6] focus:bg-white rounded-xl py-2 pl-3.5 pr-10 text-xs font-normal text-[#191c1e] outline-none transition-all"
+            className="w-full bg-[#f2f4f6] border border-[#c3c6d7] focus:border-[#004ac6] focus:bg-white rounded-xl py-2 pl-3.5 pr-10 text-xs font-normal text-[#191c1e] outline-none transition-all select-text"
           />
           <button
             type="submit"

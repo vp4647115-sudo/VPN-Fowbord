@@ -12,8 +12,16 @@ import { GoogleDriveModal } from './components/GoogleDriveModal';
 import { SupabaseModal } from './components/SupabaseModal';
 import { JwtAuthModal } from './components/JwtAuthModal';
 import { SkillEngineModal } from './components/SkillEngineModal';
+import { UserProfileModal } from './components/UserProfileModal';
+import { WebhookAutomationModal } from './components/WebhookAutomationModal';
+import { CommandBarModal } from './components/CommandBarModal';
+import { QuickCaptureModal } from './components/QuickCaptureModal';
+import { KnowledgeBaseModal } from './components/KnowledgeBaseModal';
+import { BoardViewSwitcher } from './components/BoardViewSwitcher';
+import { BoardMode } from './types';
 import { LoginPage } from './components/LoginPage';
-import { auth, loginWithGoogle, logoutUser, syncProjectToFirebase, getUserProjectsFromFirebase, deleteProjectFromFirebase } from './lib/firebase';
+import { auth, logoutUser, syncProjectToFirebase, getUserProjectsFromFirebase, deleteProjectFromFirebase } from './lib/firebase';
+import { supabase, signInWithGoogleSupabase, signOutUser } from './lib/supabase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { getApiUrl } from './lib/api';
 
@@ -41,7 +49,30 @@ export default function App() {
   const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
   const [isJwtModalOpen, setIsJwtModalOpen] = useState(false);
   const [isSkillModalOpen, setIsSkillModalOpen] = useState(false);
+  const [isUserProfileModalOpen, setIsUserProfileModalOpen] = useState(false);
+  const [isWebhookModalOpen, setIsWebhookModalOpen] = useState(false);
+  const [isCommandBarOpen, setIsCommandBarOpen] = useState(false);
+  const [isQuickCaptureOpen, setIsQuickCaptureOpen] = useState(false);
+  const [isKnowledgeBaseOpen, setIsKnowledgeBaseOpen] = useState(false);
+  const [activeBoardMode, setActiveBoardMode] = useState<BoardMode>('canvas');
+  const [isFirstTimeOnboarding, setIsFirstTimeOnboarding] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
+
+  // Global Keyboard Shortcuts (Ctrl + K, Ctrl + Shift + C)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsCommandBarOpen((prev) => !prev);
+      }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'c') {
+        e.preventDefault();
+        setIsQuickCaptureOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Restore saved session from localStorage on initial load
   useEffect(() => {
@@ -52,6 +83,13 @@ export default function App() {
         if (parsed && (parsed.email || parsed.uid)) {
           setCurrentUser(parsed);
           setIsLoggedIn(true);
+
+          // Check if profile details are completed
+          const savedProfile = localStorage.getItem('flowboard_user_profile');
+          if (!savedProfile) {
+            setIsFirstTimeOnboarding(true);
+            setIsUserProfileModalOpen(true);
+          }
         }
       } catch (e) {
         console.warn('Stale user session');
@@ -89,7 +127,7 @@ export default function App() {
     const syncTeamOnlineState = async () => {
       try {
         // 1. Send active member heartbeat presence
-        await fetch(getApiUrl(`/api/teams/${teamId}/presence`), {
+        const presenceRes = await fetch(getApiUrl(`/api/teams/${teamId}/presence`), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -100,34 +138,41 @@ export default function App() {
           }),
         });
 
+        if (!presenceRes.ok) {
+          return;
+        }
+
         // 2. Fetch latest team state (nodes, connectors, chat)
         const res = await fetch(getApiUrl(`/api/teams/${teamId}`));
         if (res.ok && isSubscribed) {
-          const data = await res.json();
-          if (data.success && data.team) {
-            const team = data.team;
-            // Sync nodes, connectors, chat if team updated by another online member
-            if (team.lastUpdated && team.lastUpdated > lastSyncedAt) {
-              lastSyncedAt = team.lastUpdated;
-              
-              if (currentProject) {
-                const updatedProj = {
-                  ...currentProject,
-                  nodes: team.nodes && team.nodes.length > 0 ? team.nodes : currentProject.nodes,
-                  connectors: team.connectors && team.connectors.length > 0 ? team.connectors : currentProject.connectors,
-                  chat: team.chat && team.chat.length > 0 ? team.chat : currentProject.chat,
-                };
+          const contentType = res.headers.get('content-type');
+          if (contentType && contentType.includes('application/json')) {
+            const data = await res.json();
+            if (data.success && data.team) {
+              const team = data.team;
+              // Sync nodes, connectors, chat if team updated by another online member
+              if (team.lastUpdated && team.lastUpdated > lastSyncedAt) {
+                lastSyncedAt = team.lastUpdated;
                 
-                // Only update state if there's an actual change in data length or nodes
-                if (
-                  JSON.stringify(updatedProj.nodes) !== JSON.stringify(currentProject.nodes) ||
-                  JSON.stringify(updatedProj.connectors) !== JSON.stringify(currentProject.connectors) ||
-                  JSON.stringify(updatedProj.chat) !== JSON.stringify(currentProject.chat)
-                ) {
-                  setCurrentProject(updatedProj);
-                  setProjects((prev) =>
-                    prev.map((p) => (p.id === updatedProj.id ? updatedProj : p))
-                  );
+                if (currentProject) {
+                  const updatedProj = {
+                    ...currentProject,
+                    nodes: team.nodes && team.nodes.length > 0 ? team.nodes : currentProject.nodes,
+                    connectors: team.connectors && team.connectors.length > 0 ? team.connectors : currentProject.connectors,
+                    chat: team.chat && team.chat.length > 0 ? team.chat : currentProject.chat,
+                  };
+                  
+                  // Only update state if there's an actual change in data length or nodes
+                  if (
+                    JSON.stringify(updatedProj.nodes) !== JSON.stringify(currentProject.nodes) ||
+                    JSON.stringify(updatedProj.connectors) !== JSON.stringify(currentProject.connectors) ||
+                    JSON.stringify(updatedProj.chat) !== JSON.stringify(currentProject.chat)
+                  ) {
+                    setCurrentProject(updatedProj);
+                    setProjects((prev) =>
+                      prev.map((p) => (p.id === updatedProj.id ? updatedProj : p))
+                    );
+                  }
                 }
               }
             }
@@ -147,6 +192,41 @@ export default function App() {
       clearInterval(interval);
     };
   }, [activeTeamName, currentProject, currentUser]);
+
+  // Listen to Supabase Auth state (for Supabase Google OAuth redirect & session restoration)
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        const supaUser = {
+          uid: session.user.id,
+          email: session.user.email,
+          displayName: session.user.user_metadata?.full_name || session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User',
+          photoURL: session.user.user_metadata?.avatar_url || session.user.user_metadata?.picture || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=250&auto=format&fit=crop',
+        };
+        setCurrentUser(supaUser as any);
+        setIsLoggedIn(true);
+        localStorage.setItem('flowboard_user', JSON.stringify(supaUser));
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        const supaUser = {
+          uid: session.user.id,
+          email: session.user.email,
+          displayName: session.user.user_metadata?.full_name || session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User',
+          photoURL: session.user.user_metadata?.avatar_url || session.user.user_metadata?.picture || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=250&auto=format&fit=crop',
+        };
+        setCurrentUser(supaUser as any);
+        setIsLoggedIn(true);
+        localStorage.setItem('flowboard_user', JSON.stringify(supaUser));
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
 
   // Listen to Firebase Auth state
   useEffect(() => {
@@ -488,10 +568,13 @@ export default function App() {
   };
 
   const handleNavbarGoogleLogin = async () => {
-    const u = await loginWithGoogle();
+    const u = await signInWithGoogleSupabase();
     if (u) {
       setCurrentUser(u);
       setIsLoggedIn(true);
+      localStorage.setItem('flowboard_user', JSON.stringify(u));
+      setIsFirstTimeOnboarding(true);
+      setIsUserProfileModalOpen(true);
     }
   };
 
@@ -503,6 +586,8 @@ export default function App() {
             setCurrentUser(user);
           }
           setIsLoggedIn(true);
+          setIsFirstTimeOnboarding(true);
+          setIsUserProfileModalOpen(true);
         }}
       />
     );
@@ -517,6 +602,7 @@ export default function App() {
         currentUser={currentUser}
         onLogin={handleNavbarGoogleLogin}
         onLogout={() => {
+          signOutUser();
           logoutUser();
           setCurrentUser(null);
           setIsLoggedIn(false);
@@ -536,6 +622,14 @@ export default function App() {
         setActiveCategory={setActiveCategory}
         onOpenSettings={() => setIsSettingsModalOpen(true)}
         onOpenSkillModal={() => setIsSkillModalOpen(true)}
+        onOpenUserProfileModal={() => {
+          setIsFirstTimeOnboarding(false);
+          setIsUserProfileModalOpen(true);
+        }}
+        onOpenWebhookModal={() => setIsWebhookModalOpen(true)}
+        onOpenCommandBar={() => setIsCommandBarOpen(true)}
+        onOpenQuickCapture={() => setIsQuickCaptureOpen(true)}
+        onOpenKnowledgeBase={() => setIsKnowledgeBaseOpen(true)}
       />
 
       {/* Joined Team Notice Banner */}
@@ -560,6 +654,18 @@ export default function App() {
               activeCategory={activeCategory}
               setActiveCategory={setActiveCategory}
               onOpenSettings={() => setIsSettingsModalOpen(true)}
+              onOpenCommandBar={() => setIsCommandBarOpen(true)}
+              onOpenQuickCapture={() => setIsQuickCaptureOpen(true)}
+              onOpenKnowledgeBase={() => setIsKnowledgeBaseOpen(true)}
+              onOpenWebhookModal={() => setIsWebhookModalOpen(true)}
+              onOpenSkillModal={() => setIsSkillModalOpen(true)}
+              onOpenUserProfileModal={() => {
+                setIsFirstTimeOnboarding(false);
+                setIsUserProfileModalOpen(true);
+              }}
+              onOpenDriveModal={() => setIsDriveModalOpen(true)}
+              onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
+              onOpenJwtModal={() => setIsJwtModalOpen(true)}
             />
             <Dashboard
               projects={projects}
@@ -578,24 +684,72 @@ export default function App() {
           </>
         ) : (
           currentProject && (
-            <>
-              <CanvasWorkspace
-                project={currentProject}
-                onUpdateProject={handleUpdateProject}
-                gridStyle={gridStyle}
-              />
+            <div className="flex flex-col flex-1 h-full w-full relative overflow-hidden">
+              {activeBoardMode === 'canvas' ? (
+                <CanvasWorkspace
+                  project={currentProject}
+                  onUpdateProject={handleUpdateProject}
+                  gridStyle={gridStyle}
+                />
+              ) : (
+                <BoardViewSwitcher
+                  project={currentProject}
+                  onUpdateProject={handleUpdateProject}
+                  activeMode={activeBoardMode}
+                  onChangeMode={setActiveBoardMode}
+                />
+              )}
+
+              {/* View Switcher Bar floating toggle for Canvas */}
+              <div className="fixed top-18 right-6 z-40 flex items-center gap-1 bg-[#121215]/90 border border-white/10 rounded-full p-1 shadow-2xl backdrop-blur-md">
+                {(['canvas', 'board', 'timeline', 'table', 'analytics'] as BoardMode[]).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setActiveBoardMode(m)}
+                    className={`px-3 py-1 rounded-full text-xs font-bold capitalize transition-all cursor-pointer ${
+                      activeBoardMode === m
+                        ? 'bg-blue-600 text-white shadow-md'
+                        : 'text-slate-400 hover:text-white hover:bg-white/10'
+                    }`}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+
               <TeamChatSidebar
                 chatMessages={currentProject.chat || []}
                 onSendMessage={handleSendMessage}
                 isOpen={isChatOpen}
                 onToggleOpen={() => setIsChatOpen(!isChatOpen)}
               />
-            </>
+            </div>
           )
         )}
       </div>
 
       {/* Modals */}
+      <CommandBarModal
+        isOpen={isCommandBarOpen}
+        onClose={() => setIsCommandBarOpen(false)}
+        project={currentProject || undefined}
+        onUpdateProject={handleUpdateProject}
+        onNavigateMode={(mode) => setActiveBoardMode(mode)}
+      />
+
+      <QuickCaptureModal
+        isOpen={isQuickCaptureOpen}
+        onClose={() => setIsQuickCaptureOpen(false)}
+        project={currentProject || undefined}
+        onUpdateProject={handleUpdateProject}
+      />
+
+      <KnowledgeBaseModal
+        isOpen={isKnowledgeBaseOpen}
+        onClose={() => setIsKnowledgeBaseOpen(false)}
+        project={currentProject || undefined}
+        onUpdateProject={handleUpdateProject}
+      />
       <ShareModal
         isOpen={isShareModalOpen}
         onClose={() => setIsShareModalOpen(false)}
@@ -645,6 +799,30 @@ export default function App() {
       <SkillEngineModal
         isOpen={isSkillModalOpen}
         onClose={() => setIsSkillModalOpen(false)}
+      />
+
+      <UserProfileModal
+        isOpen={isUserProfileModalOpen}
+        onClose={() => setIsUserProfileModalOpen(false)}
+        currentUserEmail={currentUser?.email || ''}
+        currentDisplayName={currentUser?.displayName || ''}
+        isFirstTime={isFirstTimeOnboarding}
+        onProfileSaved={(updatedProfile) => {
+          if (currentUser && updatedProfile.firstName) {
+            const newDisplayName = updatedProfile.firstName;
+            setCurrentUser({
+              ...currentUser,
+              displayName: newDisplayName,
+            });
+          }
+        }}
+      />
+
+      <WebhookAutomationModal
+        isOpen={isWebhookModalOpen}
+        onClose={() => setIsWebhookModalOpen(false)}
+        currentUserEmail={currentUser?.email || ''}
+        currentDisplayName={currentUser?.displayName || ''}
       />
     </div>
   );

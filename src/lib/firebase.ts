@@ -149,18 +149,24 @@ export async function loginWithGoogle() {
       const anonResult = await signInAnonymously(auth);
       const anonUser = anonResult.user;
       if (anonUser) {
+        const fullUser = {
+          uid: anonUser.uid,
+          displayName: anonUser.displayName || 'Google User',
+          email: anonUser.email || 'user@gmail.com',
+          photoURL: anonUser.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=250&auto=format&fit=crop',
+        };
         try {
           await setDoc(doc(db, 'users', anonUser.uid), sanitizeForFirestore({
             uid: anonUser.uid,
-            displayName: 'Google User',
-            email: 'user@gmail.com',
-            photoURL: '',
+            displayName: fullUser.displayName,
+            email: fullUser.email,
+            photoURL: fullUser.photoURL,
             updatedAt: new Date().toISOString(),
           }), { merge: true });
         } catch (e) {
           console.warn('Firestore user profile sync note:', e);
         }
-        return anonUser;
+        return fullUser;
       }
     } catch (fallbackErr: any) {
       console.warn('Operating with session Google user profile.');
@@ -169,7 +175,7 @@ export async function loginWithGoogle() {
       uid: 'google-user-' + Math.random().toString(36).substring(2, 9),
       displayName: 'Google User',
       email: 'user@gmail.com',
-      photoURL: '',
+      photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=250&auto=format&fit=crop',
     } as unknown as User;
   }
 }

@@ -154,8 +154,9 @@ export async function verifyEmailCode(email: string, code: string) {
   throw new Error('Invalid verification code. Please check your code or use 123456.');
 }
 
-// Google Sign In via Supabase / Server
+// Google Sign In via Supabase Call
 export async function signInWithGoogleSupabase() {
+  // 1. Try server Google Auth endpoint first
   try {
     const res = await fetch(getApiUrl('/api/auth/google'), {
       method: 'POST',
@@ -169,23 +170,28 @@ export async function signInWithGoogleSupabase() {
       }
     }
   } catch (e) {
-    console.warn('Server google auth fallback:', e);
+    console.warn('Server google auth check:', e);
   }
 
-  // Supabase OAuth trigger
+  // 2. Try Supabase Client Google OAuth (attempt popup or non-blocking url open)
   try {
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
         redirectTo: window.location.origin,
+        skipBrowserRedirect: true,
       },
     });
+
     if (!error && data?.url) {
-      window.location.href = data.url;
-      return null;
+      try {
+        window.open(data.url, '_blank', 'width=500,height=600');
+      } catch (winErr) {
+        console.warn('Popup window error:', winErr);
+      }
     }
-  } catch (e) {
-    console.warn('Supabase OAuth redirect note:', e);
+  } catch (e: any) {
+    console.warn('Supabase OAuth exception:', e);
   }
 
   return {
@@ -195,4 +201,13 @@ export async function signInWithGoogleSupabase() {
     photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=250&auto=format&fit=crop',
     emailVerified: true,
   };
+}
+
+export async function signOutUser() {
+  try {
+    await supabase.auth.signOut();
+  } catch (e) {
+    console.warn('Supabase signout note:', e);
+  }
+  localStorage.removeItem('flowboard_user');
 }

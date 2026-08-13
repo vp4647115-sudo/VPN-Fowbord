@@ -239,7 +239,19 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
         }),
       });
 
-      const data = await res.json();
+      let data: any = {};
+      const resText = await res.text();
+      if (resText) {
+        try {
+          data = JSON.parse(resText);
+        } catch (e) {
+          console.warn('Response was not valid JSON:', resText);
+          data = { success: false, error: 'Server returned an invalid response format' };
+        }
+      } else {
+        data = { success: false, error: 'Empty response received from server' };
+      }
+
       if (data.success && data.diagram) {
         const { nodes: newNodes, connectors: newConnectors, title: newTitle } = data.diagram;
         
@@ -291,8 +303,9 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       }
     } catch (err: any) {
       console.error('AI Generation error:', err);
-      setAiNotice('Failed to generate diagram. Please check connection and try again.');
-      setTimeout(() => setAiNotice(null), 4000);
+      const errMsg = err?.message || 'Network error occurred while generating diagram.';
+      setAiNotice(`AI Error: ${errMsg}`);
+      setTimeout(() => setAiNotice(null), 5000);
     } finally {
       setIsAiGenerating(false);
     }
@@ -2680,7 +2693,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
           onMouseDown={(e) => e.stopPropagation()}
           onMouseUp={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
-          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2 pointer-events-auto max-w-xl w-full px-4 drop-shadow-2xl"
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2 pointer-events-auto max-w-xl w-full px-4 drop-shadow-2xl select-text"
         >
           {aiNotice && (
             <div className="bg-[#111827] text-white text-xs font-semibold px-4 py-2 rounded-full shadow-2xl flex items-center gap-2 border border-blue-500/40 animate-in fade-in zoom-in-95">
