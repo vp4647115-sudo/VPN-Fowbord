@@ -23,21 +23,25 @@ export class SkillEngine {
   private registerDefaultSkill(): void {
     let rawMarkdown = '';
 
+    // Safe environment detection for browser vs Node runtime
     try {
-      if (typeof process !== 'undefined' && process.versions && process.versions.node) {
-        const fs = require('fs');
-        const path = require('path');
-        const skillPath = path.join(process.cwd(), 'SKILL.md');
-        const agentsPath = path.join(process.cwd(), 'AGENTS.md');
+      if (typeof window === 'undefined' && typeof globalThis !== 'undefined') {
+        const req = (globalThis as any).require;
+        if (typeof req === 'function') {
+          const fs = req('fs');
+          const path = req('path');
+          const skillPath = path.join(process.cwd(), 'SKILL.md');
+          const agentsPath = path.join(process.cwd(), 'AGENTS.md');
 
-        if (fs.existsSync(skillPath)) {
-          rawMarkdown = fs.readFileSync(skillPath, 'utf-8');
-        } else if (fs.existsSync(agentsPath)) {
-          rawMarkdown = fs.readFileSync(agentsPath, 'utf-8');
+          if (fs.existsSync(skillPath)) {
+            rawMarkdown = fs.readFileSync(skillPath, 'utf-8');
+          } else if (fs.existsSync(agentsPath)) {
+            rawMarkdown = fs.readFileSync(agentsPath, 'utf-8');
+          }
         }
       }
-    } catch (e) {
-      console.warn('Unable to load SKILL.md/AGENTS.md from disk:', e);
+    } catch {
+      // Graceful fallback to embedded enterprise directive template
     }
 
     if (!rawMarkdown) {

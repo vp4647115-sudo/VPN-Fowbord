@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { User } from 'firebase/auth';
-import { getApiUrl } from '../lib/api';
+import { getApiUrl, safeFetchJson } from '../lib/api';
 
 interface TeamInviteModalProps {
   isOpen: boolean;
@@ -76,17 +76,21 @@ export const TeamInviteModal: React.FC<TeamInviteModalProps> = ({
     setSendingInvite(true);
 
     try {
-      const res = await fetch(getApiUrl('/api/team/invite'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: emailToInvite,
-          role,
-          teamName,
-          redirectUrl: directJoinUrl,
-        }),
-      });
-      const data = await res.json();
+      const result = await safeFetchJson<{ success?: boolean; message?: string; error?: string }>(
+        getApiUrl('/api/team/invite'),
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: emailToInvite,
+            role,
+            teamName,
+            redirectUrl: directJoinUrl,
+          }),
+        }
+      );
+
+      const data = result.data || {};
 
       const newMember = {
         id: 'm-' + Date.now(),
@@ -94,16 +98,18 @@ export const TeamInviteModal: React.FC<TeamInviteModalProps> = ({
         email: emailToInvite,
         role: role,
         avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${emailToInvite}`,
-        status: 'Invited (Pending)',
+        status: 'Invited (Online Link Ready)',
       };
 
       setMembers((prev) => [...prev, newMember]);
       setEmailInput('');
       setSentEmailNotice(true);
-      setInviteNoticeMessage(data.message || `Invitation email sent directly to ${emailToInvite} via Supabase!`);
+      setInviteNoticeMessage(
+        data.message || `Invitation recorded for ${emailToInvite}. Share the team link to collaborate online!`
+      );
       setTimeout(() => setSentEmailNotice(false), 5000);
     } catch (err) {
-      console.error('Invite error:', err);
+      console.warn('Invite notice:', err);
     } finally {
       setSendingInvite(false);
     }

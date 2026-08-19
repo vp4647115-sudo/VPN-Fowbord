@@ -1,5 +1,5 @@
 import { UserProfileData } from '../types';
-import { getApiUrl } from './api';
+import { getApiUrl, safeFetchJson } from './api';
 
 export const DEFAULT_ANY2_WEBHOOK_URL = 'https://internai.app.n8n.cloud/webhook/3b56b40a-bf87-4ece-b07e-a46faeb2e770';
 
@@ -176,18 +176,20 @@ export async function sendProfileToAny2Webhook(
 ): Promise<{ success: boolean; status?: number; responseText?: string; error?: string }> {
   try {
     // Call server endpoint proxy first or direct fetch
-    const res = await fetch(getApiUrl('/api/webhook/trigger'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        webhookUrl: webhookUrl || DEFAULT_ANY2_WEBHOOK_URL,
-        profile,
-      }),
-    });
+    const proxyResult = await safeFetchJson<{ success?: boolean; result?: any }>(
+      getApiUrl('/api/webhook/trigger'),
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          webhookUrl: webhookUrl || DEFAULT_ANY2_WEBHOOK_URL,
+          profile,
+        }),
+      }
+    );
 
-    const data = await res.json();
-    if (res.ok && data.success) {
-      return { success: true, status: res.status, responseText: JSON.stringify(data.webhookResponse) };
+    if (proxyResult.ok && proxyResult.data?.success) {
+      return { success: true, status: proxyResult.status, responseText: JSON.stringify(proxyResult.data.result) };
     }
 
     // Direct fetch fallback if backend proxy fails

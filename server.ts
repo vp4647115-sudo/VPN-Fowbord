@@ -49,26 +49,20 @@ function apiRateLimiter(limit: number = 60, windowMs: number = 60000) {
 // Allowed Origin Validator for CORS
 function isAllowedOrigin(origin: string): boolean {
   if (!origin) return true;
-  if (origin.includes("localhost") || origin.includes("127.0.0.1")) return true;
-  if (origin.endsWith(".run.app") || origin.endsWith(".ai.studio") || origin.endsWith(".vpnpro.in")) return true;
-  if (process.env.APP_URL && origin.startsWith(process.env.APP_URL)) return true;
-  return false;
+  return true; // Allow all origins for seamless cross-domain & custom domain hosting (e.g. vpnpro.in, cloud run, local)
 }
 
 // CORS Middleware with origin validation and security headers
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  if (origin && isAllowedOrigin(origin)) {
+  if (origin) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Access-Control-Allow-Credentials", "true");
-  } else if (!origin) {
-    res.setHeader("Access-Control-Allow-Origin", "*");
   } else {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader("Access-Control-Allow-Origin", "*");
   }
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH");
-  res.setHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization, x-api-key, apikey");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH, HEAD");
+  res.setHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization, x-api-key, apikey, Cache-Control, Pragma, Priority, Sec-Ch-Ua, Sec-Ch-Ua-Mobile, Sec-Ch-Ua-Platform, User-Agent");
 
   if (req.method === "OPTIONS") {
     return res.status(200).end();

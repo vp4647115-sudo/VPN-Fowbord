@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { getApiUrl } from './api';
+import { getApiUrl, safeFetchJson } from './api';
 
 // Read Supabase environment variables or use safe fallback
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
@@ -31,21 +31,23 @@ export async function signUpUser(email: string, password: string, fullName?: str
 
   try {
     // Call server signup endpoint first for guaranteed handling
-    const res = await fetch(getApiUrl('/api/auth/signup'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: email.trim(), password, fullName }),
-    });
+    const result = await safeFetchJson<{ success?: boolean; error?: string; message?: string; requiresVerification?: boolean; verificationCode?: string; user?: any }>(
+      getApiUrl('/api/auth/signup'),
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), password, fullName }),
+      }
+    );
 
-    const data = await res.json();
-    if (res.ok && data.success) {
-      return data;
+    if (result.ok && result.data?.success) {
+      return result.data;
     }
-    if (!res.ok && data.error) {
-      throw new Error(data.error);
+    if (result.data?.error) {
+      throw new Error(result.data.error);
     }
   } catch (err: any) {
-    if (err.message && !err.message.includes('fetch') && !err.message.includes('Failed to fetch')) {
+    if (err.message && !err.message.includes('fetch') && !err.message.includes('Failed to fetch') && !err.message.includes('HTTP')) {
       throw err;
     }
     console.warn('Server signup API fallback check:', err);
@@ -89,27 +91,23 @@ export async function signInUser(email: string, password: string) {
   }
 
   try {
-    const res = await fetch(getApiUrl('/api/auth/login'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: email.trim(), password }),
-    });
+    const result = await safeFetchJson<{ success?: boolean; error?: string; user?: any }>(
+      getApiUrl('/api/auth/login'),
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), password }),
+      }
+    );
 
-    if (res.ok) {
-      const data = await res.json();
-      if (data.success) {
-        return data;
-      } else {
-        throw new Error(data.error || 'Invalid credentials');
-      }
-    } else {
-      const data = await res.json().catch(() => ({}));
-      if (data.error) {
-        throw new Error(data.error);
-      }
+    if (result.ok && result.data?.success) {
+      return result.data;
+    }
+    if (result.data?.error) {
+      throw new Error(result.data.error);
     }
   } catch (err: any) {
-    if (err.message && !err.message.includes('fetch') && !err.message.includes('Failed to fetch')) {
+    if (err.message && !err.message.includes('fetch') && !err.message.includes('Failed to fetch') && !err.message.includes('HTTP')) {
       throw err;
     }
   }
@@ -146,22 +144,23 @@ export async function verifyEmailCode(email: string, code: string) {
   }
 
   try {
-    const res = await fetch(getApiUrl('/api/auth/verify'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: email.trim(), code: cleanCode }),
-    });
+    const result = await safeFetchJson<{ success?: boolean; error?: string; message?: string; user?: any }>(
+      getApiUrl('/api/auth/verify'),
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), code: cleanCode }),
+      }
+    );
 
-    if (res.ok) {
-      const data = await res.json();
-      if (data.success) return data;
-      if (data.error) throw new Error(data.error);
-    } else {
-      const data = await res.json().catch(() => ({}));
-      if (data.error) throw new Error(data.error);
+    if (result.ok && result.data?.success) {
+      return result.data;
+    }
+    if (result.data?.error) {
+      throw new Error(result.data.error);
     }
   } catch (e: any) {
-    if (e.message && !e.message.includes('fetch') && !e.message.includes('Failed to fetch')) {
+    if (e.message && !e.message.includes('fetch') && !e.message.includes('Failed to fetch') && !e.message.includes('HTTP')) {
       throw e;
     }
     console.warn('Server verify fallback:', e);
@@ -188,16 +187,16 @@ export async function verifyEmailCode(email: string, code: string) {
 export async function signInWithGoogleSupabase() {
   // 1. Try server Google Auth endpoint first
   try {
-    const res = await fetch(getApiUrl('/api/auth/google'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-    });
-
-    if (res.ok) {
-      const data = await res.json();
-      if (data.success && data.user) {
-        return data.user;
+    const result = await safeFetchJson<{ success?: boolean; user?: any }>(
+      getApiUrl('/api/auth/google'),
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
       }
+    );
+
+    if (result.ok && result.data?.success && result.data?.user) {
+      return result.data.user;
     }
   } catch (e) {
     console.warn('Server google auth check:', e);

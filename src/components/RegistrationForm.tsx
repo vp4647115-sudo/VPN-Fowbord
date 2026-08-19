@@ -3,7 +3,7 @@ import { UserProfileData } from '../types';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { getApiUrl } from '../lib/api';
+import { getApiUrl, safeFetchJson } from '../lib/api';
 import { sendProfileToAny2Webhook } from '../lib/webhookEngine';
 
 interface RegistrationFormProps {
@@ -135,13 +135,12 @@ export const RegistrationForm: React.FC<RegistrationFormProps> = ({
       // 2. Sync to backend API & dispatch webhook silently in background
       let webhookDispatched = false;
       try {
-        const res = await fetch(getApiUrl('/api/user/profile'), {
+        const result = await safeFetchJson(getApiUrl('/api/user/profile'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(profileData),
         });
-        const data = await res.json();
-        if (data?.webhookResult?.success) {
+        if (result?.data?.webhookResult?.success) {
           webhookDispatched = true;
         }
       } catch (err) {

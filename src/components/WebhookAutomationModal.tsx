@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { getApiUrl } from '../lib/api';
+import { getApiUrl, safeFetchJson } from '../lib/api';
 import {
   DEFAULT_ANY2_WEBHOOK_URL,
   EMAIL_SUBJECT,
@@ -53,10 +53,9 @@ export const WebhookAutomationModal: React.FC<WebhookAutomationModalProps> = ({
 
   const fetchLogs = async () => {
     try {
-      const res = await fetch(getApiUrl('/api/webhook/logs'));
-      const data = await res.json();
-      if (data?.logs) {
-        setLogs(data.logs);
+      const result = await safeFetchJson<{ logs?: any[] }>(getApiUrl('/api/webhook/logs'));
+      if (result.ok && result.data?.logs) {
+        setLogs(result.data.logs);
       }
     } catch (e) {
       console.warn('Could not fetch webhook logs', e);

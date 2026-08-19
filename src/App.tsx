@@ -20,10 +20,10 @@ import { KnowledgeBaseModal } from './components/KnowledgeBaseModal';
 import { BoardViewSwitcher } from './components/BoardViewSwitcher';
 import { BoardMode } from './types';
 import { LoginPage } from './components/LoginPage';
-import { auth, logoutUser, syncProjectToFirebase, getUserProjectsFromFirebase, deleteProjectFromFirebase } from './lib/firebase';
+import { auth, loginWithGoogle, logoutUser, syncProjectToFirebase, getUserProjectsFromFirebase, deleteProjectFromFirebase } from './lib/firebase';
 import { supabase, signInWithGoogleSupabase, signOutUser } from './lib/supabase';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { getApiUrl } from './lib/api';
+import { getApiUrl, safeFetchJson } from './lib/api';
 
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -83,13 +83,6 @@ export default function App() {
         if (parsed && (parsed.email || parsed.uid)) {
           setCurrentUser(parsed);
           setIsLoggedIn(true);
-
-          // Check if profile details are completed
-          const savedProfile = localStorage.getItem('flowboard_user_profile');
-          if (!savedProfile) {
-            setIsFirstTimeOnboarding(true);
-            setIsUserProfileModalOpen(true);
-          }
         }
       } catch (e) {
         console.warn('Stale user session');
@@ -124,14 +117,26 @@ export default function App() {
     let isSubscribed = true;
     let lastSyncedAt = 0;
 
+    const getStableUserId = () => {
+      if (currentUser?.uid) return currentUser.uid;
+      if (currentUser?.email) return currentUser.email;
+      let storedGuestId = sessionStorage.getItem('flowboard_guest_uid');
+      if (!storedGuestId) {
+        storedGuestId = 'guest-' + Math.random().toString(36).substring(2, 9);
+        sessionStorage.setItem('flowboard_guest_uid', storedGuestId);
+      }
+      return storedGuestId;
+    };
+
     const syncTeamOnlineState = async () => {
       try {
+        const stableUid = getStableUserId();
         // 1. Send active member heartbeat presence
-        const presenceRes = await fetch(getApiUrl(`/api/teams/${teamId}/presence`), {
+        const presenceRes = await safeFetchJson(getApiUrl(`/api/teams/${teamId}/presence`), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            userId: currentUser?.uid || currentUser?.email || 'guest-' + Date.now(),
+            userId: stableUid,
             email: currentUser?.email || 'online@flowboard.app',
             displayName: currentUser?.displayName || currentUser?.email?.split('@')[0] || 'Team Collaborator',
             avatar: currentUser?.photoURL,
@@ -143,37 +148,31 @@ export default function App() {
         }
 
         // 2. Fetch latest team state (nodes, connectors, chat)
-        const res = await fetch(getApiUrl(`/api/teams/${teamId}`));
-        if (res.ok && isSubscribed) {
-          const contentType = res.headers.get('content-type');
-          if (contentType && contentType.includes('application/json')) {
-            const data = await res.json();
-            if (data.success && data.team) {
-              const team = data.team;
-              // Sync nodes, connectors, chat if team updated by another online member
-              if (team.lastUpdated && team.lastUpdated > lastSyncedAt) {
-                lastSyncedAt = team.lastUpdated;
-                
-                if (currentProject) {
-                  const updatedProj = {
-                    ...currentProject,
-                    nodes: team.nodes && team.nodes.length > 0 ? team.nodes : currentProject.nodes,
-                    connectors: team.connectors && team.connectors.length > 0 ? team.connectors : currentProject.connectors,
-                    chat: team.chat && team.chat.length > 0 ? team.chat : currentProject.chat,
-                  };
-                  
-                  // Only update state if there's an actual change in data length or nodes
-                  if (
-                    JSON.stringify(updatedProj.nodes) !== JSON.stringify(currentProject.nodes) ||
-                    JSON.stringify(updatedProj.connectors) !== JSON.stringify(currentProject.connectors) ||
-                    JSON.stringify(updatedProj.chat) !== JSON.stringify(currentProject.chat)
-                  ) {
-                    setCurrentProject(updatedProj);
-                    setProjects((prev) =>
-                      prev.map((p) => (p.id === updatedProj.id ? updatedProj : p))
-                    );
-                  }
-                }
+        const res = await safeFetchJson<{ success?: boolean; team?: any }>(getApiUrl(`/api/teams/${teamId}`));
+        if (res.ok && isSubscribed && res.data?.success && res.data.team) {
+          const team = res.data.team;
+          // Sync nodes, connectors, chat if team updated by another online member
+          if (team.lastUpdated && team.lastUpdated > lastSyncedAt) {
+            lastSyncedAt = team.lastUpdated;
+            
+            if (currentProject) {
+              const updatedProj = {
+                ...currentProject,
+                nodes: team.nodes && team.nodes.length > 0 ? team.nodes : currentProject.nodes,
+                connectors: team.connectors && team.connectors.length > 0 ? team.connectors : currentProject.connectors,
+                chat: team.chat && team.chat.length > 0 ? team.chat : currentProject.chat,
+              };
+              
+              // Only update state if there's an actual change in data length or nodes
+              if (
+                JSON.stringify(updatedProj.nodes) !== JSON.stringify(currentProject.nodes) ||
+                JSON.stringify(updatedProj.connectors) !== JSON.stringify(currentProject.connectors) ||
+                JSON.stringify(updatedProj.chat) !== JSON.stringify(currentProject.chat)
+              ) {
+                setCurrentProject(updatedProj);
+                setProjects((prev) =>
+                  prev.map((p) => (p.id === updatedProj.id ? updatedProj : p))
+                );
               }
             }
           }
@@ -270,17 +269,11 @@ export default function App() {
       while (attempts < 3) {
         try {
           attempts++;
-          const res = await fetch(getApiUrl('/api/projects'));
-          if (res.ok) {
-            const contentType = res.headers.get('content-type');
-            if (contentType && contentType.includes('application/json')) {
-              const data = await res.json();
-              if (data && data.success && Array.isArray(data.projects) && data.projects.length > 0) {
-                setProjects(data.projects);
-                setCurrentProject((prev) => prev || data.projects[0]);
-                return;
-              }
-            }
+          const result = await safeFetchJson<{ success?: boolean; projects?: Project[] }>(getApiUrl('/api/projects'));
+          if (result.ok && result.data?.success && Array.isArray(result.data.projects) && result.data.projects.length > 0) {
+            setProjects(result.data.projects);
+            setCurrentProject((prev) => prev || result.data!.projects![0]);
+            return;
           }
         } catch (err: any) {
           console.warn(`Attempt ${attempts} fetching /api/projects:`, err?.message || err);
@@ -316,25 +309,19 @@ export default function App() {
     };
 
     try {
-      const res = await fetch(getApiUrl('/api/projects'), {
+      const result = await safeFetchJson<{ success?: boolean; project?: Project }>(getApiUrl('/api/projects'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newProj),
       });
-      if (res.ok) {
-        const contentType = res.headers.get('content-type');
-        if (contentType && contentType.includes('application/json')) {
-          const data = await res.json();
-          if (data && data.success && data.project) {
-            setProjects((prev) => [data.project, ...prev]);
-            setCurrentProject(data.project);
-            setViewMode('workspace');
-            if (currentUser) {
-              syncProjectToFirebase(data.project, currentUser.uid);
-            }
-            return;
-          }
+      if (result.ok && result.data?.success && result.data.project) {
+        setProjects((prev) => [result.data!.project!, ...prev]);
+        setCurrentProject(result.data.project);
+        setViewMode('workspace');
+        if (currentUser) {
+          syncProjectToFirebase(result.data.project, currentUser.uid);
         }
+        return;
       }
     } catch (err) {
       console.warn('Backend API project creation unavailable, using local state:', err);
@@ -573,13 +560,21 @@ export default function App() {
   };
 
   const handleNavbarGoogleLogin = async () => {
-    const u = await signInWithGoogleSupabase();
-    if (u) {
-      setCurrentUser(u);
-      setIsLoggedIn(true);
-      localStorage.setItem('flowboard_user', JSON.stringify(u));
-      setIsFirstTimeOnboarding(true);
-      setIsUserProfileModalOpen(true);
+    try {
+      const u = await loginWithGoogle();
+      if (u) {
+        const fullUser = {
+          uid: u.uid,
+          displayName: u.displayName || 'Google User',
+          email: u.email || 'user@gmail.com',
+          photoURL: u.photoURL,
+        };
+        setCurrentUser(fullUser);
+        setIsLoggedIn(true);
+        localStorage.setItem('flowboard_user', JSON.stringify(fullUser));
+      }
+    } catch (e) {
+      console.warn('Navbar google login note:', e);
     }
   };
 
@@ -591,8 +586,6 @@ export default function App() {
             setCurrentUser(user);
           }
           setIsLoggedIn(true);
-          setIsFirstTimeOnboarding(true);
-          setIsUserProfileModalOpen(true);
         }}
       />
     );
