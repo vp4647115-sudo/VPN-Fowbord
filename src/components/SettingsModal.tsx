@@ -19,7 +19,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   gridStyle = 'dot',
   onChangeGridStyle,
 }) => {
-  const [selectedModel, setSelectedModel] = useState('gemini-3.6-flash');
+  const [selectedModel, setSelectedModel] = useState('gemini-3.7-flash');
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(true);
 
   if (!isOpen) return null;
@@ -56,7 +56,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               onChange={(e) => setSelectedModel(e.target.value)}
               className="w-full bg-[#f2f4f6] border border-[#c3c6d7] rounded-xl px-4 py-2.5 text-xs font-semibold text-[#191c1e] outline-none focus:border-[#004ac6]"
             >
-              <option value="gemini-3.6-flash">gemini-3.6-flash (Fast & Accurate)</option>
+              <option value="gemini-3.7-flash">gemini-3.7-flash (Fast & Accurate - Recommended)</option>
               <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview (Complex Reasoning)</option>
             </select>
           </div>
