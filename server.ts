@@ -269,9 +269,9 @@ const teamsRoomDb: Record<string, TeamWorkspaceData> = {
 const presenceRoomStore: Record<string, Record<string, PresenceUser>> = {};
 
 // Get or Create Team Workspace State
-app.get("/api/teams/:teamId", (req, res) => {
+const handleGetTeam = (req: express.Request, res: express.Response) => {
   const { teamId } = req.params;
-  const cleanId = teamId.toLowerCase();
+  const cleanId = (teamId || '').toLowerCase();
   
   if (!teamsRoomDb[cleanId]) {
     const readableName = cleanId.replace(/^team-/, '').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
@@ -297,13 +297,16 @@ app.get("/api/teams/:teamId", (req, res) => {
     success: true,
     team: teamsRoomDb[cleanId]
   });
-});
+};
+
+app.get("/api/teams/:teamId", handleGetTeam);
+app.get("/api/team/:teamId", handleGetTeam);
 
 // Real-Time Online Sync Endpoint for Team Workspace
-app.post("/api/teams/:teamId/sync", (req, res) => {
+const handleSyncTeam = (req: express.Request, res: express.Response) => {
   const { teamId } = req.params;
   const { nodes, connectors, chat, updatedBy } = req.body;
-  const cleanId = teamId.toLowerCase();
+  const cleanId = (teamId || '').toLowerCase();
 
   if (!teamsRoomDb[cleanId]) {
     const readableName = cleanId.replace(/^team-/, '').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
@@ -328,13 +331,16 @@ app.post("/api/teams/:teamId/sync", (req, res) => {
     team: teamsRoomDb[cleanId],
     syncedAt: teamsRoomDb[cleanId].lastUpdated
   });
-});
+};
+
+app.post("/api/teams/:teamId/sync", handleSyncTeam);
+app.post("/api/team/:teamId/sync", handleSyncTeam);
 
 // Register Presence Heartbeat for Online Team Member
-app.post("/api/teams/:teamId/presence", (req, res) => {
+const handlePostPresence = (req: express.Request, res: express.Response) => {
   const { teamId } = req.params;
   const { userId, email, displayName, avatar, x, y } = req.body;
-  const cleanId = teamId.toLowerCase();
+  const cleanId = (teamId || '').toLowerCase();
 
   if (!presenceRoomStore[cleanId]) {
     presenceRoomStore[cleanId] = {};
@@ -360,12 +366,15 @@ app.post("/api/teams/:teamId/presence", (req, res) => {
     onlineCount: onlineUsers.length,
     onlineUsers
   });
-});
+};
+
+app.post("/api/teams/:teamId/presence", handlePostPresence);
+app.post("/api/team/:teamId/presence", handlePostPresence);
 
 // Get Online Team Members & Live Cursors
-app.get("/api/teams/:teamId/presence", (req, res) => {
+const handleGetPresence = (req: express.Request, res: express.Response) => {
   const { teamId } = req.params;
-  const cleanId = teamId.toLowerCase();
+  const cleanId = (teamId || '').toLowerCase();
   
   const roomUsers = presenceRoomStore[cleanId] || {};
   const now = Date.now();
@@ -376,13 +385,16 @@ app.get("/api/teams/:teamId/presence", (req, res) => {
     onlineCount: activeOnlineUsers.length,
     onlineUsers: activeOnlineUsers
   });
-});
+};
+
+app.get("/api/teams/:teamId/presence", handleGetPresence);
+app.get("/api/team/:teamId/presence", handleGetPresence);
 
 // Post Team Room Chat Message
-app.post("/api/teams/:teamId/chat", (req, res) => {
+const handlePostChat = (req: express.Request, res: express.Response) => {
   const { teamId } = req.params;
   const { author, text } = req.body;
-  const cleanId = teamId.toLowerCase();
+  const cleanId = (teamId || '').toLowerCase();
 
   if (!teamsRoomDb[cleanId]) {
     const readableName = cleanId.replace(/^team-/, '').replace(/-/g, ' ');
@@ -412,7 +424,10 @@ app.post("/api/teams/:teamId/chat", (req, res) => {
     message: newMsg,
     chat: teamsRoomDb[cleanId].chat
   });
-});
+};
+
+app.post("/api/teams/:teamId/chat", handlePostChat);
+app.post("/api/team/:teamId/chat", handlePostChat);
 
 // Send Team Invite via Mailer Service & Supabase Auth
 app.post("/api/team/invite", async (req, res) => {

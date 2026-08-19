@@ -195,7 +195,10 @@ export default function App() {
 
   // Listen to Supabase Auth state (for Supabase Google OAuth redirect & session restoration)
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    if (!supabase) return;
+
+    supabase.auth.getSession().then(({ data }) => {
+      const session = data?.session;
       if (session?.user) {
         const supaUser = {
           uid: session.user.id,
@@ -207,9 +210,11 @@ export default function App() {
         setIsLoggedIn(true);
         localStorage.setItem('flowboard_user', JSON.stringify(supaUser));
       }
+    }).catch((err) => {
+      console.warn('Supabase getSession note:', err);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
         const supaUser = {
           uid: session.user.id,
@@ -224,7 +229,7 @@ export default function App() {
     });
 
     return () => {
-      subscription.unsubscribe();
+      data?.subscription?.unsubscribe();
     };
   }, []);
 
